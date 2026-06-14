@@ -43,6 +43,11 @@
           <div id="tlPlayhead" class="playhead"></div>
         </div>
       </div>
+      <div id="tlOverview" class="tl-overview" title="全体俯瞰 — クリック/ドラッグで表示範囲を移動">
+        <div id="ovClips" class="ov-clips"></div>
+        <div id="ovWindow" class="ov-window"></div>
+        <div id="ovPlayhead" class="ov-playhead"></div>
+      </div>
     </section>
 
     <!-- ===== Row 3: Shelf + previews ===== -->
@@ -57,12 +62,20 @@
       <div id="origPane" class="pane">
         <div class="pane-head"><span>元比率プレビュー</span><span class="spacer"></span><span id="origTime" class="time">0:00 / 0:00</span></div>
         <div class="video-wrap">
-          <video id="srcVideo" playsinline></video>
+          <video id="srcVideo" playsinline preload="auto"></video>
           <div id="srcEmpty" class="placeholder abs">動画を追加してください</div>
+        </div>
+        <div id="seekBar" class="seekbar" title="ドラッグで高速シーク">
+          <div id="seekMarks" class="seek-marks"></div>
+          <div id="seekRange" class="seek-range"></div>
+          <div id="seekFill" class="seek-fill"></div>
+          <div id="seekHead" class="seek-head"></div>
         </div>
         <div class="transport">
           <button id="btnPlay" class="btn" title="Space">▶</button>
           <button id="btnLoop" class="btn" title="範囲ループ">↻ ループ</button>
+          <span class="spacer"></span>
+          <span id="frameInfo" class="time frame-info">—</span>
         </div>
       </div>
 
@@ -100,6 +113,17 @@
     <div class="overlay-box">
       <div id="overlayMsg">処理中…</div>
       <progress id="overlayProg" max="100" value="0"></progress>
+    </div>
+  </div>
+
+  <div id="confirm" class="overlay" hidden>
+    <div class="overlay-box confirm-box">
+      <div id="confirmTitle" class="confirm-title">削除の確認</div>
+      <div id="confirmMsg" class="confirm-msg"></div>
+      <div class="confirm-actions">
+        <button id="confirmCancel" class="btn">キャンセル</button>
+        <button id="confirmOk" class="btn btn-danger">削除</button>
+      </div>
     </div>
   </div>
 

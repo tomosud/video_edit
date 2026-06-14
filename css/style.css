@@ -83,7 +83,7 @@ body {
 /* ===== Row 2: Source timeline ===== */
 .tl-scroll { flex: 1; overflow: hidden; min-height: 0; position: relative; }
 .tl-inner { position: relative; height: 100%; width: 100%; }
-.thumb-row { display: flex; height: 100%; align-items: stretch; }
+.thumb-row { display: flex; height: 100%; align-items: stretch; will-change: transform; transform-origin: left center; }
 .thumb-cell { flex: 1 1 0; height: 100%; overflow: hidden; border-right: 1px solid rgba(0,0,0,.35); }
 .thumb-cell img, .thumb-cell canvas { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
 
@@ -109,6 +109,37 @@ body {
   text-shadow: 0 1px 2px #000; pointer-events: none; white-space: nowrap;
 }
 .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; z-index: 5; pointer-events: none; }
+
+/* ===== Source timeline overview (minimap) ===== */
+.tl-overview {
+  position: relative; height: 18px; flex: 0 0 auto;
+  background: #0e1014; border-top: 1px solid var(--line);
+  cursor: pointer; overflow: hidden; touch-action: none;
+}
+.ov-clips { position: absolute; inset: 0; }
+.ov-clip { position: absolute; top: 3px; bottom: 3px; background: var(--accent); opacity: .5; border-radius: 2px; }
+.ov-clip.selected { background: var(--sel); opacity: .95; }
+.ov-window {
+  position: absolute; top: 0; bottom: 0; min-width: 2px;
+  background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.6);
+  border-radius: 2px; pointer-events: none;
+}
+.ov-playhead { position: absolute; top: 0; bottom: 0; width: 1px; background: #fff; pointer-events: none; }
+
+/* ===== Preview seek bar ===== */
+.seekbar {
+  position: relative; height: 16px; flex: 0 0 auto; margin: 6px 12px 0;
+  background: var(--panel-3); border-radius: 8px; cursor: pointer;
+  overflow: hidden; touch-action: none;
+}
+.seek-marks { position: absolute; inset: 0; }
+.seek-marks span { position: absolute; top: 0; bottom: 0; background: var(--accent); opacity: .35; }
+.seek-range { position: absolute; top: 0; bottom: 0; display: none;
+  background: rgba(54,209,122,.28); border-left: 1px solid var(--in); border-right: 1px solid var(--in); }
+.seek-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(79,140,255,.30); }
+.seek-head { position: absolute; top: -2px; bottom: -2px; left: 0; width: 2px;
+  background: #fff; box-shadow: 0 0 4px rgba(0,0,0,.8); transform: translateX(-1px); }
+.frame-info { color: var(--text-dim); font-size: 12px; }
 
 /* ===== Row 3: Shelf + previews ===== */
 #workPane {
@@ -162,6 +193,14 @@ body {
 .overlay-box { background: var(--panel); padding: 24px 32px; border-radius: var(--radius); min-width: 340px; text-align: center; }
 #overlayMsg { margin-bottom: 12px; }
 .overlay-box progress { width: 100%; height: 8px; }
+
+/* confirm dialog */
+.confirm-box { text-align: left; max-width: 420px; }
+.confirm-title { font-weight: 700; font-size: 15px; margin-bottom: 10px; color: var(--text); }
+.confirm-msg { color: var(--text-dim); font-size: 13px; line-height: 1.6; white-space: pre-line; margin-bottom: 18px; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.btn-danger { background: #5a2330; border-color: var(--out); color: #ffd9d9; }
+.btn-danger:hover:not(:disabled) { background: var(--out); color: #2a0d0d; }
 
 /* scrollbars */
 ::-webkit-scrollbar { height: 10px; width: 10px; }

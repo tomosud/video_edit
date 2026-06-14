@@ -41,9 +41,14 @@ function seekDraw(video, t, h) {
 
 const dpr = () => Math.min(window.devicePixelRatio || 1, 2);
 
+// On-disk frame cache is keyed by the media hash (mediaKey) so it persists and
+// matches across sessions/re-imports of the same file; falls back to the random
+// session id for legacy sources without a mediaKey.
+const cacheKeyOf = (source) => source.mediaKey || source.id;
+
 // get-or-generate a single frame thumbnail URL
 export function frameUrl(source, frame, fps) {
-  return frameCache.once(source.id, frame, async () => {
+  return frameCache.once(cacheKeyOf(source), frame, async () => {
     const v = await pooledVideo(source);
     const c = await seekDraw(v, frame / fps, Math.round(THUMB_H * dpr()));
     return await new Promise(r => c.toBlob(r, 'image/jpeg', 0.72));
@@ -59,26 +64,60 @@ function cell(url) {
   return d;
 }
 
-// Render `count` thumbnails across [win.start, win.end] into `row`.
+// When a single frame is at least this many pixels wide, switch to a
+// frame-aligned filmstrip (exactly one cell per frame, cell edges on frame
+// boundaries) so clip-band edges line up perfectly with the frames they cut.
+const FRAME_CELL_MIN_PX = 22;
+
+// Render thumbnails across [win.start, win.end] into `row`.
 // token = { cancelled } lets callers abort a stale render.
 export async function generateWindow(source, win, row, { fps, token } = {}) {
   fps = fps || source.fps || 30;
+  const W = row.clientWidth || window.innerWidth;
   const span = Math.max(0.001, win.end - win.start);
-  const count = Math.max(6, Math.round((row.clientWidth || window.innerWidth) / TARGET_SPACING));
+  const xOf = (t) => (t - win.start) / span * W;     // same mapping as the timeline's timeToX
+  const framePx = W / (span * fps);                  // on-screen width of one frame
 
-  // build skeleton immediately (so widths are stable while frames stream in)
   row.innerHTML = '';
-  const cells = [];
-  for (let i = 0; i < count; i++) { const c = cell(null); row.appendChild(c); cells.push(c.firstChild); }
+  const cells = [];   // { img, frame }
 
-  for (let i = 0; i < count; i++) {
+  if (framePx >= FRAME_CELL_MIN_PX) {
+    // ---- frame-aligned mode (zoomed in) ----
+    // one absolutely-positioned cell per frame; left/width derived from the exact
+    // frame-boundary times, so band edges (snapped to k/fps) sit on cell borders.
+    row.style.display = 'block';
+    const f0 = Math.floor(win.start * fps);
+    const f1 = Math.ceil(win.end * fps);
+    for (let f = f0; f < f1; f++) {
+      const left = xOf(f / fps);
+      const w = xOf((f + 1) / fps) - left;
+      const c = document.createElement('div');
+      c.className = 'thumb-cell';
+      c.style.cssText = `position:absolute;left:${left}px;width:${Math.max(1, w)}px;top:0;bottom:0`;
+      const img = document.createElement('img');
+      c.appendChild(img);
+      row.appendChild(c);
+      cells.push({ img, frame: f });
+    }
+  } else {
+    // ---- sampled mode (zoomed out) ----
+    // evenly spaced cells; exact frame alignment isn't perceptible at this zoom.
+    row.style.display = 'flex';
+    const count = Math.max(6, Math.min(400, Math.round(W / TARGET_SPACING)));
+    for (let i = 0; i < count; i++) {
+      const c = cell(null);
+      row.appendChild(c);
+      const t = win.start + (i / count) * span;
+      cells.push({ img: c.firstChild, frame: Math.round(t * fps) });
+    }
+  }
+
+  for (let i = 0; i < cells.length; i++) {
     if (token?.cancelled) return;
-    const t = win.start + (i + 0.5) / count * span;
-    const frame = Math.round(t * fps);
     try {
-      const url = await frameUrl(source, frame, fps);
+      const url = await frameUrl(source, cells[i].frame, fps);
       if (token?.cancelled) return;
-      cells[i].src = url;
+      cells[i].img.src = url;
     } catch { /* skip */ }
   }
 }

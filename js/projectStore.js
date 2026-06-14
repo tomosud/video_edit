@@ -112,3 +112,25 @@ export async function findMedia(fileName) {
     return await fh.getFile();
   } catch { return null; }
 }
+
+// Copy a picked video into the project's gitignored media/ folder via streaming
+// (handles multi-GB files without loading into memory). Returns the on-disk
+// file handle + freshly read File + relative path. If the name already exists
+// with the same size, reuse it instead of recopying.
+export async function copyIntoMedia(file, destName = file.name) {
+  if (!_dirHandle) return null;
+  if (!(await ensurePermission(_dirHandle))) throw new Error('書き込み権限がありません');
+  const media = await _dirHandle.getDirectoryHandle('media', { create: true });
+
+  // reuse an identical existing copy (same name + size) to avoid re-writing
+  try {
+    const existing = await media.getFileHandle(destName);
+    const ef = await existing.getFile();
+    if (ef.size === file.size) return { relPath: 'media/' + destName, handle: existing, file: ef };
+  } catch { /* not present — fall through to copy */ }
+
+  const fh = await media.getFileHandle(destName, { create: true });
+  const w = await fh.createWritable();
+  await file.stream().pipeTo(w);   // streaming copy; pipeTo closes the writable
+  return { relPath: 'media/' + destName, handle: fh, file: await fh.getFile() };
+}

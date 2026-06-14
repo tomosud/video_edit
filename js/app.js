@@ -7,14 +7,17 @@ import * as srcTimeline from './sourceTimeline.js';
 import * as shelf from './materialShelf.js';
 import * as outSeq from './outputSequence.js';
 import { exportProject, downloadBlob } from './export.js';
-import { fmtTime } from './util.js';
+import { fmtTime, makeScrubber } from './util.js';
 
 const $ = (id) => document.getElementById(id);
 const el = {};
 ['btnNewProject','btnOpenProject','btnSave','btnAddVideo','sourceSelect','btnUndo','btnRedo',
  'btnExport','status','srcVideo','srcEmpty','origTime','btnPlay','btnLoop','vertCanvas',
  'panX','panY','zoom','overlay','overlayMsg','overlayProg',
+ 'confirm','confirmTitle','confirmMsg','confirmOk','confirmCancel',
  'tlScroll','tlInner','thumbRow','clipBands','tlPlayhead','srcRange',
+ 'tlOverview','ovClips','ovWindow','ovPlayhead',
+ 'seekBar','seekMarks','seekRange','seekFill','seekHead','frameInfo',
  'shelf','shelfCount','outList','totalDur','btnPlayOut','btnStopOut'].forEach(id => el[id] = $(id));
 
 let projectOpen = false;
@@ -29,12 +32,13 @@ function init() {
   srcTimeline.init({
     scroll: el.tlScroll, inner: el.tlInner, thumbRow: el.thumbRow,
     bands: el.clipBands, playhead: el.tlPlayhead, range: el.srcRange,
+    overview: el.tlOverview, ovClips: el.ovClips, ovWindow: el.ovWindow, ovPlayhead: el.ovPlayhead,
   }, el.srcVideo);
   shelf.init({ shelf: el.shelf, count: el.shelfCount }, { play: playRange });
   outSeq.init({ list: el.outList, total: el.totalDur }, { play: playRange });
   srcTimeline.onPlayRange(playRange);
 
-  wireMenu(); wireTransport(); wireCrop(); wireShortcuts();
+  wireMenu(); wireTransport(); wireCrop(); wireShortcuts(); wireSeek(); wireConfirm();
   store.subscribe(onState);
 
   bootstrap();
@@ -106,6 +110,7 @@ function wireTransport() {
 function playRange(a, b) {
   stopSequence();
   store.ui.playRange = { start: a, end: b };
+  renderSeekDecor();
   seekTo(a, () => el.srcVideo.play());
 }
 
@@ -159,6 +164,87 @@ function seekTo(t, cb) {
   }
 }
 
+// ---------- preview seek bar + frame readout ----------
+let seekScrub = null;
+let seekRaf = 0;
+function wireSeek() {
+  seekScrub = makeScrubber(el.srcVideo);
+  const bar = el.seekBar;
+  let dragging = false;
+  const tAt = (clientX) => {
+    const r = bar.getBoundingClientRect();
+    const f = Math.min(1, Math.max(0, (clientX - r.left) / (r.width || 1)));
+    return f * (el.srcVideo.duration || 0);
+  };
+  bar.addEventListener('pointerdown', (e) => {
+    if (!el.srcVideo.duration) return;
+    dragging = true;
+    try { bar.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    stopSequence(); store.ui.playRange = null;
+    seekScrub(tAt(e.clientX)); updateSeek();
+  });
+  bar.addEventListener('pointermove', (e) => { if (dragging) { seekScrub(tAt(e.clientX)); updateSeek(e.clientX); } });
+  bar.addEventListener('pointerup', (e) => {
+    if (!dragging) return;
+    dragging = false;
+    try { bar.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    try { el.srcVideo.currentTime = tAt(e.clientX); } catch { /* ignore */ }
+  });
+
+  el.srcVideo.addEventListener('timeupdate', () => { updateSeek(); updateFrameInfo(); });
+  el.srcVideo.addEventListener('seeked', () => { updateSeek(); updateFrameInfo(); });
+  el.srcVideo.addEventListener('loadedmetadata', () => { renderSeekDecor(); updateSeek(); updateFrameInfo(); });
+  el.srcVideo.addEventListener('play', startSeekLoop);
+  el.srcVideo.addEventListener('pause', stopSeekLoop);
+  el.srcVideo.addEventListener('ended', stopSeekLoop);
+}
+
+function startSeekLoop() { if (!seekRaf) seekLoop(); }
+function stopSeekLoop() { cancelAnimationFrame(seekRaf); seekRaf = 0; updateSeek(); }
+function seekLoop() { updateSeek(); seekRaf = requestAnimationFrame(seekLoop); }
+
+function updateSeek(overrideX) {
+  const d = el.srcVideo.duration || 0;
+  let f = 0;
+  if (overrideX != null) {
+    const r = el.seekBar.getBoundingClientRect();
+    f = Math.min(1, Math.max(0, (overrideX - r.left) / (r.width || 1))) * 100;
+  } else {
+    f = d ? (el.srcVideo.currentTime / d * 100) : 0;
+  }
+  el.seekFill.style.width = f + '%';
+  el.seekHead.style.left = f + '%';
+}
+
+function updateFrameInfo() {
+  const src = store.activeSource();
+  const fps = (src && src.fps) || 0;
+  if (!fps || !el.srcVideo.duration) { el.frameInfo.textContent = '—'; return; }
+  const frameDur = 1 / fps;
+  const frame = Math.round(el.srcVideo.currentTime * fps);
+  const totalFrames = Math.round((el.srcVideo.duration || 0) * fps);
+  el.frameInfo.textContent = `${fps}fps · 1コマ ${frameDur.toFixed(3)}s · #${frame}/${totalFrames}`;
+}
+
+function renderSeekDecor() {
+  const d = el.srcVideo.duration || store.activeSource()?.duration || 0;
+  if (!d) { el.seekMarks.innerHTML = ''; el.seekRange.style.display = 'none'; return; }
+  const sid = store.ui.activeSourceId;
+  const mats = store.get().materials.filter(m => m.sourceId === sid);
+  el.seekMarks.innerHTML = mats.map(m => {
+    const l = m.in / d * 100, w = Math.max(0.3, (m.out - m.in) / d * 100);
+    return `<span style="left:${l}%;width:${w}%"></span>`;
+  }).join('');
+  const r = store.ui.playRange;
+  if (r) {
+    el.seekRange.style.display = 'block';
+    el.seekRange.style.left = (r.start / d * 100) + '%';
+    el.seekRange.style.width = Math.max(0.3, (r.end - r.start) / d * 100) + '%';
+  } else {
+    el.seekRange.style.display = 'none';
+  }
+}
+
 // ---------- crop sliders ----------
 function wireCrop() {
   const start = () => { if (store.ui.selection.kind === 'output') store.beginAction(); };
@@ -180,13 +266,64 @@ function wireCrop() {
 // ---------- shortcuts ----------
 function wireShortcuts() {
   window.addEventListener('keydown', (e) => {
+    // confirm dialog captures Enter/Escape while open
+    if (!el.confirm.hidden) {
+      if (e.key === 'Enter') { e.preventDefault(); closeConfirm(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeConfirm(false); }
+      return;
+    }
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); store.undo(); }
     else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); store.redo(); }
     else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); el.btnSave.click(); }
+    else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
     else if (e.key === ' ') { e.preventDefault(); el.btnPlay.click(); }
   });
+}
+
+// ---------- confirm dialog + selection delete ----------
+let confirmResolve = null;
+function wireConfirm() {
+  el.confirmOk.onclick = () => closeConfirm(true);
+  el.confirmCancel.onclick = () => closeConfirm(false);
+  el.confirm.addEventListener('pointerdown', (e) => { if (e.target === el.confirm) closeConfirm(false); });
+}
+function askConfirm(message, okLabel = '削除') {
+  el.confirmMsg.textContent = message;
+  el.confirmOk.textContent = okLabel;
+  el.confirm.hidden = false;
+  el.confirmOk.focus();
+  return new Promise((res) => { confirmResolve = res; });
+}
+function closeConfirm(val) {
+  if (el.confirm.hidden) return;
+  el.confirm.hidden = true;
+  const r = confirmResolve; confirmResolve = null;
+  if (r) r(val);
+}
+
+async function deleteSelected() {
+  const sel = store.ui.selection;
+  if (!sel.kind) { setStatus('削除対象が選択されていません'); return; }
+
+  if (sel.kind === 'output') {
+    // deleting an output removes only this instance; the cutout material stays
+    if (await askConfirm('この出力クリップを削除しますか？\n（元の切り出し素材はそのまま残ります）')) {
+      outSeq.deleteOutput(sel.id);
+      setStatus('出力クリップを削除しました');
+    }
+  } else if (sel.kind === 'material') {
+    // deleting a material also removes every output built from it
+    const deps = store.get().outputs.filter(o => o.materialId === sel.id).length;
+    const msg = deps
+      ? `この切り出し素材を削除しますか？\nこの素材を使う出力クリップ ${deps} 個も一緒に削除されます。`
+      : 'この切り出し素材を削除しますか？';
+    if (await askConfirm(msg)) {
+      shelf.deleteMaterial(sel.id);
+      setStatus('切り出し素材を削除しました');
+    }
+  }
 }
 
 // ---------- export ----------
@@ -226,6 +363,7 @@ function onState(project, ui) {
     if (document.activeElement !== el.zoom) el.zoom.value = crop.zoom;
   }
 
+  renderSeekDecor();
   updateChrome();
 }
 

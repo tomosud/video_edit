@@ -5,7 +5,9 @@ import { fmtDur } from './util.js';
 
 let listEl, totalEl;
 let onPlay = () => {};
-const thumbs = new Map(); // outputId -> objectURL
+const thumbs = new Map();   // outputId -> objectURL
+const thumbSig = new Map(); // outputId -> mid-frame signature
+const thumbBusy = new Map();// outputId -> bool
 
 export function init(elements, { play } = {}) {
   listEl = elements.list;
@@ -40,18 +42,41 @@ function render() {
   listEl.innerHTML = '';
   for (const o of outs) {
     listEl.appendChild(card(o, sel.kind === 'output' && sel.id === o.id));
-    if (!thumbs.has(o.id)) makeThumb(o);
+    ensureThumb(o);
   }
 }
 
-async function makeThumb(o) {
+function midSig(src, m) { return Math.round((m.in + m.out) / 2 * (src.fps || 30)); }
+
+// keep the output thumbnail in sync with its material's current trim.
+async function ensureThumb(o) {
   const m = store.getMaterial(o.materialId);
   const src = m && store.getSource(m.sourceId);
   if (!src) return;
+  const sig = midSig(src, m);
+  if (thumbSig.get(o.id) === sig) return;
+  if (thumbBusy.get(o.id)) return;
+  thumbBusy.set(o.id, true);
+  let ok = false;
   try {
     const url = await cardThumb(src, (m.in + m.out) / 2);
-    if (url) { thumbs.set(o.id, url); render(); }
-  } catch { /* ignore */ }
+    if (url) {
+      ok = true;
+      thumbs.set(o.id, url);
+      thumbSig.set(o.id, sig);
+      const img = listEl.querySelector(`.card[data-id="${o.id}"] img.thumb`);
+      if (img) img.src = url;
+    }
+  } catch { /* media not linked / decode failed */ }
+  finally {
+    thumbBusy.set(o.id, false);
+    // only chase a newer position if this render succeeded — otherwise retrying
+    // an unlinked/failed source would loop forever.
+    if (ok) {
+      const cm = store.getMaterial(o.materialId);
+      if (cm && midSig(src, cm) !== thumbSig.get(o.id)) ensureThumb(o);
+    }
+  }
 }
 
 function card(o, selected) {
@@ -72,7 +97,7 @@ function card(o, selected) {
   meta.innerHTML = `<span class="dur">${fmtDur(dur)}</span><span class="src">${src ? src.fileName : '?'}</span>`;
   const del = document.createElement('button');
   del.className = 'del'; del.textContent = '🗑'; del.title = '削除';
-  del.onclick = (e) => { e.stopPropagation(); removeOutput(o.id); };
+  del.onclick = (e) => { e.stopPropagation(); deleteOutput(o.id); };
   meta.appendChild(del);
 
   el.appendChild(img); el.appendChild(meta);
@@ -82,12 +107,16 @@ function card(o, selected) {
   return el;
 }
 
-function removeOutput(id) {
+// Delete just this output instance. The underlying cutout material is kept
+// (it may still be used by other outputs or re-dropped later).
+export function deleteOutput(id) {
   store.update((p, ui) => {
     p.outputs = p.outputs.filter(o => o.id !== id);
     if (ui.selection.kind === 'output' && ui.selection.id === id) ui.selection = { kind: null, id: null };
   });
   thumbs.delete(id);
+  thumbSig.delete(id);
+  thumbBusy.delete(id);
 }
 
 // ---- drop from shelf + reorder ----
