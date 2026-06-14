@@ -28,6 +28,7 @@ let loopEnabled = true;
 let sequence = null;   // { items:[{sourceId,in,out}], i } during 連続再生
 let transportRaf = 0;
 let projectSaveTimer = 0;
+let sequenceAdvancing = false;
 
 function init() {
   cropPreview.init(el.vertCanvas, el.srcVideo);
@@ -136,7 +137,7 @@ function transportLoop() {
   // Sequential output playback takes priority over a source loop range.
   if (sequence) {
     const it = sequence.items[sequence.i];
-    if (it && el.srcVideo.currentTime >= it.out - endGuard()) advanceSequence();
+    if (it && !sequenceAdvancing && el.srcVideo.currentTime >= it.out - endGuard()) advanceSequence();
     return;
   }
 
@@ -157,25 +158,32 @@ function playOutputs() {
   const p = store.get();
   const items = p.outputs.map(o => {
     const m = store.getMaterial(o.materialId);
-    return m ? { sourceId: m.sourceId, in: m.in, out: m.out } : null;
+    return m ? { outputId: o.id, materialId: m.id, sourceId: m.sourceId, in: m.in, out: m.out } : null;
   }).filter(Boolean);
   if (!items.length) return;
   store.ui.playRange = null;
   sequence = { items, i: 0 };
+  sequenceAdvancing = false;
   el.btnStopOut.disabled = false;
   playSequenceItem();
 }
 
 function playSequenceItem() {
   const it = sequence.items[sequence.i];
+  store.ui._fromSequence = true;
+  store.select('output', it.outputId);
   ensureSource(it.sourceId, () => {
-    el.srcVideo.currentTime = it.in;
-    el.srcVideo.play();
+    seekTo(it.in, () => {
+      sequenceAdvancing = false;
+      el.srcVideo.play();
+    });
   });
 }
 
 function advanceSequence() {
   if (!sequence) return;
+  sequenceAdvancing = true;
+  try { el.srcVideo.pause(); } catch { /* ignore */ }
   sequence.i++;
   if (sequence.i >= sequence.items.length) { stopSequence(); el.srcVideo.pause(); return; }
   playSequenceItem();
@@ -183,6 +191,7 @@ function advanceSequence() {
 
 function stopSequence() {
   sequence = null;
+  sequenceAdvancing = false;
   el.btnStopOut.disabled = true;
 }
 
@@ -194,8 +203,20 @@ function ensureSource(sourceId, cb) {
 
 function seekTo(t, cb) {
   if (el.srcVideo.readyState >= 1) {
-    el.srcVideo.currentTime = t;
-    if (cb) { const h = () => { el.srcVideo.removeEventListener('seeked', h); cb(); }; el.srcVideo.addEventListener('seeked', h); }
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      el.srcVideo.removeEventListener('seeked', finish);
+      cb?.();
+    };
+    if (cb) {
+      el.srcVideo.addEventListener('seeked', finish);
+      requestAnimationFrame(() => {
+        if (Math.abs(el.srcVideo.currentTime - t) < 1e-4 && !el.srcVideo.seeking) finish();
+      });
+    }
+    try { el.srcVideo.currentTime = t; } catch { finish(); }
   } else {
     pendingSeek = t;
     if (cb) el.srcVideo.addEventListener('loadeddata', cb, { once: true });
@@ -426,6 +447,10 @@ async function saveProjectNow() {
 }
 
 function applySelection() {
+  if (store.ui._fromSequence) {
+    store.ui._fromSequence = false;
+    return;
+  }
   const fromTL = store.ui._fromTimeline;
   store.ui._fromTimeline = false;
   const r = store.resolve();
