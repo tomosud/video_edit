@@ -13,7 +13,7 @@ const $ = (id) => document.getElementById(id);
 const el = {};
 ['btnNewProject','btnOpenProject','btnAddVideo','sourceSelect','btnUndo','btnRedo',
  'btnExport','status','srcVideo','srcEmpty','origTime','btnPlay','btnLoop','vertCanvas',
- 'panX','panY','zoom','overlay','overlayMsg','overlayProg',
+ 'panX','panY','zoom','bgBlur','overlay','overlayMsg','overlayProg',
  'confirm','confirmTitle','confirmMsg','confirmOk','confirmCancel',
  'tlScroll','tlInner','thumbRow','clipBands','tlPlayhead','srcRange',
  'tlOverview','ovClips','ovWindow','ovPlayhead',
@@ -308,7 +308,7 @@ function renderSeekDecor() {
 function wireCrop() {
   const start = () => { if (store.resolve()?.material) store.beginAction(); };
   const apply = () => {
-    const crop = { panX: +el.panX.value, panY: +el.panY.value, zoom: +el.zoom.value };
+    const crop = { panX: +el.panX.value, panY: +el.panY.value, zoom: +el.zoom.value, bgBlur: +el.bgBlur.value };
     const r = store.resolve();
     if (r?.material) {
       store.updateLive(() => { r.material.crop = crop; });
@@ -316,7 +316,7 @@ function wireCrop() {
       store.setUI({ crop });
     }
   };
-  for (const s of [el.panX, el.panY, el.zoom]) {
+  for (const s of [el.panX, el.panY, el.zoom, el.bgBlur]) {
     s.addEventListener('pointerdown', start);
     s.addEventListener('input', apply);
   }
@@ -420,6 +420,7 @@ function onState(project, ui) {
     if (document.activeElement !== el.panX) el.panX.value = crop.panX;
     if (document.activeElement !== el.panY) el.panY.value = crop.panY;
     if (document.activeElement !== el.zoom) el.zoom.value = crop.zoom;
+    if (document.activeElement !== el.bgBlur) el.bgBlur.value = crop.bgBlur ?? 0;
   }
 
   renderSeekDecor();

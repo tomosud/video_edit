@@ -50,7 +50,7 @@ function seekTo(video, t) {
 function drawFrame(ctx, video, outW, outH, crop) {
   const vw = video.videoWidth, vh = video.videoHeight;
   if (!vw || !vh) return;
-  const { panX = 0.5, panY = 0.5, zoom = 1 } = crop || {};
+  const { panX = 0.5, panY = 0.5, zoom = 1, bgBlur = 0 } = crop || {};
   const targetAspect = outW / outH;
   const sourceAspect = vw / vh;
 
@@ -66,19 +66,16 @@ function drawFrame(ctx, video, outW, outH, crop) {
   const cropH = baseH / zoom;
   const sx = (vw - cropW) * panX;
   const sy = (vh - cropH) * panY;
-  const needsBackground = sx < 0 || sy < 0 || sx + cropW > vw || sy + cropH > vh;
-  if (needsBackground) {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, outW, outH);
+  if ((sx < 0 || sy < 0 || sx + cropW > vw || sy + cropH > vh) && bgBlur > 0) {
     const bgScale = Math.max(outW / vw, outH / vh) * 1.08;
     const bgW = vw * bgScale, bgH = vh * bgScale;
     ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, bgBlur));
     ctx.filter = 'blur(24px)';
     ctx.drawImage(video, (outW - bgW) / 2, (outH - bgH) / 2, bgW, bgH);
     ctx.restore();
-    ctx.fillStyle = 'rgba(0,0,0,.28)';
-    ctx.fillRect(0, 0, outW, outH);
-  } else {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, outW, outH);
   }
 
   const vx = Math.max(0, sx);

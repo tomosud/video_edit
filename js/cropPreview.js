@@ -48,21 +48,21 @@ function draw() {
   drawCropped(ctx, video, W, H, currentCrop());
 }
 
-function drawBlurBackground(ctx, video, W, H) {
+function drawBlurBackground(ctx, video, W, H, amount) {
+  if (amount <= 0) return;
   const vw = video.videoWidth, vh = video.videoHeight;
   const scale = Math.max(W / vw, H / vh) * 1.08;
   const dw = vw * scale, dh = vh * scale;
   ctx.save();
+  ctx.globalAlpha = amount;
   ctx.filter = 'blur(24px)';
   ctx.drawImage(video, (W - dw) / 2, (H - dh) / 2, dw, dh);
   ctx.restore();
-  ctx.fillStyle = 'rgba(0,0,0,.28)';
-  ctx.fillRect(0, 0, W, H);
 }
 
 function drawCropped(ctx, video, W, H, crop) {
   const vw = video.videoWidth, vh = video.videoHeight;
-  const { panX = 0.5, panY = 0.5, zoom = 1 } = crop || {};
+  const { panX = 0.5, panY = 0.5, zoom = 1, bgBlur = 0 } = crop || {};
   const targetAspect = W / H;
   const sourceAspect = vw / vh;
 
@@ -78,12 +78,10 @@ function drawCropped(ctx, video, W, H, crop) {
   const cropH = baseH / zoom;
   const sx = (vw - cropW) * panX;
   const sy = (vh - cropH) * panY;
-  const needsBackground = sx < 0 || sy < 0 || sx + cropW > vw || sy + cropH > vh;
-  if (needsBackground) {
-    drawBlurBackground(ctx, video, W, H);
-  } else {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+  if (sx < 0 || sy < 0 || sx + cropW > vw || sy + cropH > vh) {
+    drawBlurBackground(ctx, video, W, H, Math.max(0, Math.min(1, bgBlur)));
   }
 
   const vx = Math.max(0, sx);

@@ -154,7 +154,7 @@ function migrate(p) {
   return normalizeProject({ ...p, version: 2, materials, outputs, clips: undefined });
 }
 
-function defaultCrop() { return { panX: .5, panY: .5, zoom: 1 }; }
+function defaultCrop() { return { panX: .5, panY: .5, zoom: 1, bgBlur: 0 }; }
 
 function normalizeProject(p) {
   const outputs = p.outputs || [];
@@ -163,6 +163,7 @@ function normalizeProject(p) {
       const out = outputs.find(o => o.materialId === m.id && o.crop);
       m.crop = out?.crop || defaultCrop();
     }
+    m.crop = { ...defaultCrop(), ...m.crop };
   }
   for (const o of outputs) delete o.crop;
   return p;
