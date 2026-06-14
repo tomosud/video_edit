@@ -6,6 +6,7 @@ import { hashKey } from './util.js';
 
 // runtime registry: sourceId -> { file, url, handle }
 const media = new Map();
+let addVideoInFlight = null;
 
 export function urlFor(sourceId) { return media.get(sourceId)?.url || null; }
 export function fileFor(sourceId) { return media.get(sourceId)?.file || null; }
@@ -95,6 +96,12 @@ function register(sourceId, file, handle = null) {
 
 // User adds a new video to the project
 export async function addVideo() {
+  if (addVideoInFlight) return addVideoInFlight;
+  addVideoInFlight = addVideoImpl().finally(() => { addVideoInFlight = null; });
+  return addVideoInFlight;
+}
+
+async function addVideoImpl() {
   let file, handle = null;
   if ('showOpenFilePicker' in window) {
     const [fh] = await window.showOpenFilePicker({
@@ -110,6 +117,12 @@ export async function addVideo() {
   const id = uid('src');
   // stable cache identity from file name + size (survives re-imports / sessions)
   const mediaKey = await hashKey(`${file.name}:${file.size}`);
+  const existing = store.get().sources.find(s =>
+    s.mediaKey === mediaKey || (s.fileName === file.name && s.size === file.size));
+  if (existing) {
+    store.setUI({ activeSourceId: existing.id });
+    return existing.id;
+  }
 
   // copy into the project's gitignored media/ folder when a project is open,
   // then point the source at the on-disk copy.
@@ -118,7 +131,9 @@ export async function addVideo() {
     try {
       const copied = await projectStore.copyIntoMedia(file);
       if (copied) { relPath = copied.relPath; handle = copied.handle; file = copied.file; }
-    } catch (err) { console.warn('media copy failed (using picked file directly)', err); }
+    } catch (err) {
+      throw new Error('media フォルダへの動画コピーに失敗しました。コピー完了前に同じ動画を追加した場合は、少し待ってからもう一度試してください。\n' + (err?.message || err));
+    }
   }
 
   const url = register(id, file, handle);

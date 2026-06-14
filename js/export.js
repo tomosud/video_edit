@@ -52,14 +52,48 @@ function drawFrame(ctx, video, outW, outH, crop) {
   if (!vw || !vh) return;
   const { panX = 0.5, panY = 0.5, zoom = 1 } = crop || {};
   const targetAspect = outW / outH;
-  let cropH = vh / zoom;
-  let cropW = cropH * targetAspect;
-  if (cropW > vw) { cropW = vw / zoom; cropH = cropW / targetAspect; }
+  const sourceAspect = vw / vh;
+
+  let baseW, baseH;
+  if (sourceAspect > targetAspect) {
+    baseH = vh;
+    baseW = vh * targetAspect;
+  } else {
+    baseW = vw;
+    baseH = vw / targetAspect;
+  }
+  const cropW = baseW / zoom;
+  const cropH = baseH / zoom;
   const sx = (vw - cropW) * panX;
   const sy = (vh - cropH) * panY;
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, outW, outH);
-  ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, outW, outH);
+  const needsBackground = sx < 0 || sy < 0 || sx + cropW > vw || sy + cropH > vh;
+  if (needsBackground) {
+    const bgScale = Math.max(outW / vw, outH / vh) * 1.08;
+    const bgW = vw * bgScale, bgH = vh * bgScale;
+    ctx.save();
+    ctx.filter = 'blur(24px)';
+    ctx.drawImage(video, (outW - bgW) / 2, (outH - bgH) / 2, bgW, bgH);
+    ctx.restore();
+    ctx.fillStyle = 'rgba(0,0,0,.28)';
+    ctx.fillRect(0, 0, outW, outH);
+  } else {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, outW, outH);
+  }
+
+  const vx = Math.max(0, sx);
+  const vy = Math.max(0, sy);
+  const vx2 = Math.min(vw, sx + cropW);
+  const vy2 = Math.min(vh, sy + cropH);
+  const sw = vx2 - vx;
+  const sh = vy2 - vy;
+  if (sw <= 0 || sh <= 0) return;
+
+  const dx = (vx - sx) / cropW * outW;
+  const dy = (vy - sy) / cropH * outH;
+  const dw = sw / cropW * outW;
+  const dh = sh / cropH * outH;
+  ctx.drawImage(video, vx, vy, sw, sh, dx, dy, dw, dh);
 }
 
 // Play video from current position until it reaches `outTime`, drawing every
@@ -241,11 +275,11 @@ export async function exportProject({ onProgress, onLog, onStatus } = {}) {
       const url = urlBySource[sourceId];
       if (video.src !== url) { video.src = url; await once(video, 'loadedmetadata'); }
       await seekTo(video, material.in);
-      drawFrame(ctx, video, outW, outH, output.crop);
+      drawFrame(ctx, video, outW, outH, material.crop);
 
       try { rec.resume(); } catch {}
       const base = elapsed;
-      await recordClip(video, material.out, () => drawFrame(ctx, video, outW, outH, output.crop),
+      await recordClip(video, material.out, () => drawFrame(ctx, video, outW, outH, material.crop),
         (t) => onProgress?.(Math.min(1, (base + Math.max(0, t - material.in)) / totalDur)));
       try { rec.pause(); } catch {}
 

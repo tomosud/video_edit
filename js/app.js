@@ -11,7 +11,7 @@ import { fmtTime, makeScrubber } from './util.js';
 
 const $ = (id) => document.getElementById(id);
 const el = {};
-['btnNewProject','btnOpenProject','btnSave','btnAddVideo','sourceSelect','btnUndo','btnRedo',
+['btnNewProject','btnOpenProject','btnAddVideo','sourceSelect','btnUndo','btnRedo',
  'btnExport','status','srcVideo','srcEmpty','origTime','btnPlay','btnLoop','vertCanvas',
  'panX','panY','zoom','overlay','overlayMsg','overlayProg',
  'confirm','confirmTitle','confirmMsg','confirmOk','confirmCancel',
@@ -26,6 +26,8 @@ let pendingSeek = null;
 let lastSelKey = '';
 let loopEnabled = true;
 let sequence = null;   // { items:[{sourceId,in,out}], i } during 連続再生
+let transportRaf = 0;
+let projectSaveTimer = 0;
 
 function init() {
   cropPreview.init(el.vertCanvas, el.srcVideo);
@@ -73,10 +75,10 @@ function wireMenu() {
       setStatus(missing.length ? `${name}（未リンク ${missing.length}）` : '開いた: ' + name);
     } else { store.load({ name }); setStatus('空フォルダ→新規: ' + name); }
   });
-  el.btnAddVideo.onclick = guard(async () => { await fileOpen.addVideo(); });
-  el.btnSave.onclick = guard(async () => {
-    const ts = await projectStore.save(store.get());
-    setStatus('保存 ' + new Date(ts).toLocaleTimeString());
+  el.btnAddVideo.onclick = guard(async () => {
+    el.btnAddVideo.disabled = true;
+    try { await fileOpen.addVideo(); }
+    finally { updateChrome(); }
   });
   el.btnUndo.onclick = () => store.undo();
   el.btnRedo.onclick = () => store.redo();
@@ -90,16 +92,11 @@ function wireTransport() {
   el.btnLoop.onclick = () => { loopEnabled = !loopEnabled; el.btnLoop.style.color = loopEnabled ? 'var(--accent)' : ''; };
   el.srcVideo.addEventListener('play', () => el.btnPlay.textContent = '⏸');
   el.srcVideo.addEventListener('pause', () => el.btnPlay.textContent = '▶');
+  el.srcVideo.addEventListener('play', startTransportMonitor);
+  el.srcVideo.addEventListener('pause', stopTransportMonitor);
+  el.srcVideo.addEventListener('ended', stopTransportMonitor);
   el.srcVideo.addEventListener('timeupdate', () => {
     el.origTime.textContent = `${fmtTime(el.srcVideo.currentTime)} / ${fmtTime(el.srcVideo.duration)}`;
-    // sequential output playback takes priority
-    if (sequence) {
-      const it = sequence.items[sequence.i];
-      if (it && el.srcVideo.currentTime >= it.out - 0.03) advanceSequence();
-      return;
-    }
-    const r = store.ui.playRange;
-    if (loopEnabled && r && el.srcVideo.currentTime >= r.end - 0.02) el.srcVideo.currentTime = r.start;
   });
   el.btnLoop.style.color = 'var(--accent)';
 
@@ -112,6 +109,47 @@ function playRange(a, b) {
   store.ui.playRange = { start: a, end: b };
   renderSeekDecor();
   seekTo(a, () => el.srcVideo.play());
+}
+
+function frameDur() {
+  const fps = store.activeSource()?.fps || 30;
+  return 1 / fps;
+}
+
+function endGuard() {
+  return Math.min(0.03, frameDur() * 0.75);
+}
+
+function startTransportMonitor() {
+  if (!transportRaf) transportLoop();
+}
+
+function stopTransportMonitor() {
+  cancelAnimationFrame(transportRaf);
+  transportRaf = 0;
+}
+
+function transportLoop() {
+  transportRaf = requestAnimationFrame(transportLoop);
+  if (!el.srcVideo || el.srcVideo.paused) return;
+
+  // Sequential output playback takes priority over a source loop range.
+  if (sequence) {
+    const it = sequence.items[sequence.i];
+    if (it && el.srcVideo.currentTime >= it.out - endGuard()) advanceSequence();
+    return;
+  }
+
+  const r = store.ui.playRange;
+  if (!r) return;
+  if (el.srcVideo.currentTime < r.end - endGuard()) return;
+
+  if (loopEnabled) {
+    el.srcVideo.currentTime = r.start;
+  } else {
+    el.srcVideo.pause();
+    try { el.srcVideo.currentTime = Math.max(r.start, r.end - frameDur()); } catch { /* ignore */ }
+  }
 }
 
 // ---- sequential playback of the output sequence ----
@@ -247,12 +285,12 @@ function renderSeekDecor() {
 
 // ---------- crop sliders ----------
 function wireCrop() {
-  const start = () => { if (store.ui.selection.kind === 'output') store.beginAction(); };
+  const start = () => { if (store.resolve()?.material) store.beginAction(); };
   const apply = () => {
     const crop = { panX: +el.panX.value, panY: +el.panY.value, zoom: +el.zoom.value };
-    const sel = store.ui.selection;
-    if (sel.kind === 'output') {
-      store.updateLive(() => { const o = store.getOutput(sel.id); if (o) o.crop = crop; });
+    const r = store.resolve();
+    if (r?.material) {
+      store.updateLive(() => { r.material.crop = crop; });
     } else {
       store.setUI({ crop });
     }
@@ -276,7 +314,7 @@ function wireShortcuts() {
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); store.undo(); }
     else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); store.redo(); }
-    else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); el.btnSave.click(); }
+    else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveProjectNow(); }
     else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
     else if (e.key === ' ') { e.preventDefault(); el.btnPlay.click(); }
   });
@@ -364,7 +402,27 @@ function onState(project, ui) {
   }
 
   renderSeekDecor();
+  scheduleProjectSave();
   updateChrome();
+}
+
+function scheduleProjectSave() {
+  if (!projectOpen || !projectStore.dirHandle()) return;
+  clearTimeout(projectSaveTimer);
+  projectSaveTimer = setTimeout(saveProjectNow, 700);
+}
+
+async function saveProjectNow() {
+  if (!projectOpen || !projectStore.dirHandle()) return;
+  clearTimeout(projectSaveTimer);
+  projectSaveTimer = 0;
+  try {
+    const ts = await projectStore.save(store.get());
+    setStatus('自動保存 ' + new Date(ts).toLocaleTimeString());
+  } catch (err) {
+    console.warn('auto save failed', err);
+    setStatus('自動保存エラー: ' + (err?.message || err));
+  }
 }
 
 function applySelection() {
@@ -403,7 +461,6 @@ function updateChrome() {
   const p = store.get();
   el.btnAddVideo.disabled = !projectOpen;
   el.sourceSelect.disabled = !p.sources.length;
-  el.btnSave.disabled = !projectOpen || !projectStore.dirHandle();
   el.btnExport.disabled = !p.outputs.length;
   el.btnPlayOut.disabled = !p.outputs.length;
   el.btnUndo.disabled = !store.canUndo();

@@ -42,26 +42,63 @@ function currentCrop() {
 function draw() {
   if (!ctx) return;
   const W = canvas.width, H = canvas.height;
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, W, H);
+  ctx.clearRect(0, 0, W, H);
   if (!video || video.readyState < 2 || !video.videoWidth) return;
 
+  drawCropped(ctx, video, W, H, currentCrop());
+}
+
+function drawBlurBackground(ctx, video, W, H) {
   const vw = video.videoWidth, vh = video.videoHeight;
-  const { panX, panY, zoom } = currentCrop();
+  const scale = Math.max(W / vw, H / vh) * 1.08;
+  const dw = vw * scale, dh = vh * scale;
+  ctx.save();
+  ctx.filter = 'blur(24px)';
+  ctx.drawImage(video, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  ctx.restore();
+  ctx.fillStyle = 'rgba(0,0,0,.28)';
+  ctx.fillRect(0, 0, W, H);
+}
 
-  // target aspect 9:16; choose source crop rect that fills the 9:16 frame
-  const targetAspect = 9 / 16;
-  // crop rect in source space, scaled by zoom (zoom>1 = tighter crop)
-  let cropH = vh / zoom;
-  let cropW = cropH * targetAspect;
-  if (cropW > vw) { cropW = vw / zoom; cropH = cropW / targetAspect; }
+function drawCropped(ctx, video, W, H, crop) {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const { panX = 0.5, panY = 0.5, zoom = 1 } = crop || {};
+  const targetAspect = W / H;
+  const sourceAspect = vw / vh;
 
-  const maxX = vw - cropW;
-  const maxY = vh - cropH;
-  const sx = maxX * panX;
-  const sy = maxY * panY;
+  let baseW, baseH;
+  if (sourceAspect > targetAspect) {
+    baseH = vh;
+    baseW = vh * targetAspect;
+  } else {
+    baseW = vw;
+    baseH = vw / targetAspect;
+  }
+  const cropW = baseW / zoom;
+  const cropH = baseH / zoom;
+  const sx = (vw - cropW) * panX;
+  const sy = (vh - cropH) * panY;
+  const needsBackground = sx < 0 || sy < 0 || sx + cropW > vw || sy + cropH > vh;
+  if (needsBackground) {
+    drawBlurBackground(ctx, video, W, H);
+  } else {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+  }
 
-  ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, W, H);
+  const vx = Math.max(0, sx);
+  const vy = Math.max(0, sy);
+  const vx2 = Math.min(vw, sx + cropW);
+  const vy2 = Math.min(vh, sy + cropH);
+  const sw = vx2 - vx;
+  const sh = vy2 - vy;
+  if (sw <= 0 || sh <= 0) return;
+
+  const dx = (vx - sx) / cropW * W;
+  const dy = (vy - sy) / cropH * H;
+  const dw = sw / cropW * W;
+  const dh = sh / cropH * H;
+  ctx.drawImage(video, vx, vy, sw, sh, dx, dy, dw, dh);
 }
 
 function loop() {

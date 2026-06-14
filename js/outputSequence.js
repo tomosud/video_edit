@@ -137,22 +137,30 @@ function onDrop(e) {
   const matId = e.dataTransfer.getData('application/x-material');
   const targetCard = e.target.closest('.card');
   const targetId = targetCard?.dataset.id;
+  const dropIndex = () => {
+    if (!targetId || !targetCard) return store.get().outputs.length;
+    const idx = store.get().outputs.findIndex(o => o.id === targetId);
+    if (idx < 0) return store.get().outputs.length;
+    const rect = targetCard.getBoundingClientRect();
+    return e.clientX > rect.left + rect.width / 2 ? idx + 1 : idx;
+  };
 
   if (matId) {
     // create new output from material, inserted at drop position
     const id = uid('out');
     store.update((p, ui) => {
-      const out = { id, materialId: matId, crop: { ...(ui.crop || { panX: .5, panY: .5, zoom: 1 }) }, texts: [] };
-      const idx = targetId ? p.outputs.findIndex(o => o.id === targetId) : p.outputs.length;
-      p.outputs.splice(idx < 0 ? p.outputs.length : idx, 0, out);
+      const out = { id, materialId: matId, texts: [] };
+      const idx = dropIndex();
+      p.outputs.splice(Math.max(0, Math.min(idx, p.outputs.length)), 0, out);
       ui.selection = { kind: 'output', id };
     });
-  } else if (dragId && targetId && dragId !== targetId) {
+  } else if (dragId) {
     store.update((p) => {
       const from = p.outputs.findIndex(o => o.id === dragId);
-      const to = p.outputs.findIndex(o => o.id === targetId);
-      if (from < 0 || to < 0) return;
+      let to = dropIndex();
+      if (from < 0) return;
       const [moved] = p.outputs.splice(from, 1);
+      if (from < to) to--;
       p.outputs.splice(to, 0, moved);
     });
   }

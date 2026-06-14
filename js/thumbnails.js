@@ -4,13 +4,14 @@ import { urlFor } from './fileOpen.js';
 
 const THUMB_H = 132;             // fixed thumbnail pixel height (cache key is frame index only)
 const TARGET_SPACING = 200;      // approx px per thumb — wider (landscape) cells
+const CACHE_VERSION = 'thumb-v2';
 
-const pool = new Map();          // sourceId -> { video, ready }
+const pool = new Map();          // sourceId -> { video, ready, chain }
 
-function pooledVideo(source) {
-  if (pool.has(source.id)) return pool.get(source.id).ready;
+function pooledEntry(source) {
+  if (pool.has(source.id)) return pool.get(source.id);
   const url = urlFor(source.id);
-  if (!url) return Promise.reject(new Error('source not linked'));
+  if (!url) throw new Error('source not linked');
   const video = document.createElement('video');
   video.preload = 'auto'; video.muted = true;
   const ready = new Promise((resolve, reject) => {
@@ -18,13 +19,16 @@ function pooledVideo(source) {
     video.onerror = () => reject(new Error('thumb video load failed'));
     video.src = url;
   });
-  pool.set(source.id, { video, ready });
-  return ready;
+  const entry = { video, ready, chain: Promise.resolve() };
+  pool.set(source.id, entry);
+  return entry;
 }
 
 function seekDraw(video, t, h) {
   return new Promise((resolve) => {
-    const onSeeked = () => {
+    const draw = () => {
+      if (done) return;
+      done = true;
       video.removeEventListener('seeked', onSeeked);
       const aspect = (video.videoWidth || 16) / (video.videoHeight || 9);
       const w = Math.round(h * aspect);
@@ -33,9 +37,14 @@ function seekDraw(video, t, h) {
       c.getContext('2d').drawImage(video, 0, 0, w, h);
       resolve(c);
     };
+    const presentThenDraw = () => requestAnimationFrame(draw);
+    const onSeeked = () => presentThenDraw();
+    let done = false;
     video.addEventListener('seeked', onSeeked);
     const dur = video.duration || t;
-    video.currentTime = Math.max(0, Math.min(t, dur - 0.03));
+    const target = Math.max(0, Math.min(t, dur - 0.03));
+    video.currentTime = target;
+    if (!video.seeking && Math.abs(video.currentTime - target) < 1e-4) presentThenDraw();
   });
 }
 
@@ -44,13 +53,22 @@ const dpr = () => Math.min(window.devicePixelRatio || 1, 2);
 // On-disk frame cache is keyed by the media hash (mediaKey) so it persists and
 // matches across sessions/re-imports of the same file; falls back to the random
 // session id for legacy sources without a mediaKey.
-const cacheKeyOf = (source) => source.mediaKey || source.id;
+const cacheKeyOf = (source) => `${CACHE_VERSION}-${source.mediaKey || source.id}`;
+
+async function queuedSeekDraw(source, t, h) {
+  const entry = pooledEntry(source);
+  const job = entry.chain.catch(() => {}).then(async () => {
+    const v = await entry.ready;
+    return seekDraw(v, t, h);
+  });
+  entry.chain = job.catch(() => {});
+  return job;
+}
 
 // get-or-generate a single frame thumbnail URL
 export function frameUrl(source, frame, fps) {
   return frameCache.once(cacheKeyOf(source), frame, async () => {
-    const v = await pooledVideo(source);
-    const c = await seekDraw(v, frame / fps, Math.round(THUMB_H * dpr()));
+    const c = await queuedSeekDraw(source, frame / fps, Math.round(THUMB_H * dpr()));
     return await new Promise(r => c.toBlob(r, 'image/jpeg', 0.72));
   });
 }

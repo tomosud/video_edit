@@ -55,7 +55,7 @@ class Store {
       const m = this.getMaterial(sel.id);
       if (!m) return null;
       return { material: m, output: null, source: this.getSource(m.sourceId),
-               in: m.in, out: m.out, crop: null };
+               in: m.in, out: m.out, crop: m.crop || null };
     }
     if (sel.kind === 'output') {
       const o = this.getOutput(sel.id);
@@ -63,7 +63,7 @@ class Store {
       const m = this.getMaterial(o.materialId);
       if (!m) return null;
       return { material: m, output: o, source: this.getSource(m.sourceId),
-               in: m.in, out: m.out, crop: o.crop };
+               in: m.in, out: m.out, crop: m.crop || o.crop };
     }
     return null;
   }
@@ -144,14 +144,28 @@ class Store {
 
 // migrate older (v1: clips[]) projects to v2 (materials/outputs)
 function migrate(p) {
-  if (p.version >= 2) return p;
+  if (p.version >= 2) return normalizeProject(p);
   const materials = [], outputs = [];
   for (const c of (p.clips || [])) {
     const mId = c.id || uid('mat');
-    materials.push({ id: mId, sourceId: c.sourceId, in: c.in, out: c.out });
-    outputs.push({ id: uid('out'), materialId: mId, crop: c.crop || { panX: .5, panY: .5, zoom: 1 }, texts: c.texts || [] });
+    materials.push({ id: mId, sourceId: c.sourceId, in: c.in, out: c.out, crop: c.crop || defaultCrop() });
+    outputs.push({ id: uid('out'), materialId: mId, texts: c.texts || [] });
   }
-  return { ...p, version: 2, materials, outputs, clips: undefined };
+  return normalizeProject({ ...p, version: 2, materials, outputs, clips: undefined });
+}
+
+function defaultCrop() { return { panX: .5, panY: .5, zoom: 1 }; }
+
+function normalizeProject(p) {
+  const outputs = p.outputs || [];
+  for (const m of (p.materials || [])) {
+    if (!m.crop) {
+      const out = outputs.find(o => o.materialId === m.id && o.crop);
+      m.crop = out?.crop || defaultCrop();
+    }
+  }
+  for (const o of outputs) delete o.crop;
+  return p;
 }
 
 export const store = new Store();

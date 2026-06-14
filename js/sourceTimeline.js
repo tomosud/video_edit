@@ -25,6 +25,7 @@ export function init(elements, videoEl) {
   els.inner.addEventListener('pointerdown', onInnerDown);
   els.inner.addEventListener('dblclick', onInnerDblClick);
   els.inner.addEventListener('contextmenu', (e) => e.preventDefault()); // allow right-drag pan
+  els.playhead.addEventListener('pointerdown', onPlayheadDown);
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
   window.addEventListener('resize', () => { layout(); scheduleRegen(); });
@@ -51,6 +52,8 @@ function xToTime(clientX) {
 const clampT = (t) => Math.max(0, Math.min(duration, t));
 // snap a time to the nearest exact frame boundary (precise, reproducible clips)
 const snapT = (t) => clampT(Math.round(t * fps) / fps);
+const frameDur = () => 1 / fps;
+const outPreviewT = (m) => clampT(Math.max(m.in, m.out - frameDur()));
 
 // ---------- state sync ----------
 function onState(project, ui) {
@@ -89,6 +92,17 @@ function onWheel(e) {
 // right button: drag anywhere = pan the view window
 // (clip creation is on double-click of empty area; see onInnerDblClick)
 let gesture = null;
+let playheadDrag = false;
+
+function onPlayheadDown(e) {
+  if (!duration || e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  playheadDrag = true;
+  try { els.playhead.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  store.setUI({ playRange: null });
+  seekFromClientX(e.clientX);
+}
 
 function onInnerDown(e) {
   if (!duration) return;
@@ -123,6 +137,7 @@ function onInnerDown(e) {
 }
 
 function onPointerMove(e) {
+  if (playheadDrag) { seekFromClientX(e.clientX); return; }
   if (ovDrag) { overviewSeek(e); return; }
   if (!gesture) return;
 
@@ -158,12 +173,19 @@ function onPointerMove(e) {
       if (gesture.edge === 'in') m.in = Math.min(t, m.out - 1 / fps);
       else m.out = Math.max(t, m.in + 1 / fps);
     });
-    scrub(gesture.edge === 'in' ? m.in : m.out);   // move playback point to the dragged edge
+    scrub(gesture.edge === 'in' ? m.in : outPreviewT(m));   // OUT shows the last in-range frame
     layout();
   }
 }
 
 function onPointerUp(e) {
+  if (playheadDrag) {
+    playheadDrag = false;
+    try { els.playhead.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    const t = snapT(xToTime(e.clientX));
+    if (video.readyState >= 1) { try { video.currentTime = t; } catch { /* ignore */ } }
+    return;
+  }
   if (ovDrag) {
     ovDrag = false;
     try { els.overview.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
@@ -173,9 +195,17 @@ function onPointerUp(e) {
   // settle preview exactly on the dragged edge after an edge trim
   if (gesture && gesture.type === 'resize' && gesture.started) {
     const m = store.getMaterial(gesture.id);
-    if (m && video.readyState >= 1) { try { video.currentTime = gesture.edge === 'in' ? m.in : m.out; } catch { /* ignore */ } }
+    if (m && video.readyState >= 1) {
+      try { video.currentTime = gesture.edge === 'in' ? m.in : outPreviewT(m); } catch { /* ignore */ }
+    }
   }
   gesture = null;
+}
+
+function seekFromClientX(clientX) {
+  const t = snapT(xToTime(clientX));
+  scrub(t);
+  positionPlayhead(t);
 }
 
 // double-click on empty area -> create a clip one displayed-frame (cell) wide.
@@ -190,7 +220,13 @@ function onInnerDblClick(e) {
   let nout = snapT(nin + cellDur);
   if (nout <= nin) { nout = snapT(nin + Math.max(1 / fps, cellDur)); }
   const id = uid('mat');
-  store.update((p) => p.materials.push({ id, sourceId: curSourceId, in: nin, out: nout }));
+  store.update((p, ui) => p.materials.push({
+    id,
+    sourceId: curSourceId,
+    in: nin,
+    out: nout,
+    crop: { ...(ui.crop || { panX: .5, panY: .5, zoom: 1 }) },
+  }));
   store.ui._fromTimeline = true;                 // creating shouldn't move the view
   store.select('material', id);
 }
@@ -274,12 +310,13 @@ function renderBands() {
   }
 }
 
-function positionPlayhead() {
+function positionPlayhead(t) {
   if (!video) return;
-  const x = timeToX(video.currentTime);
+  const cur = t ?? video.currentTime;
+  const x = timeToX(cur);
   els.playhead.style.left = x + 'px';
   els.playhead.style.display = (x < 0 || x > innerW()) ? 'none' : 'block';
-  if (els.ovPlayhead && duration) els.ovPlayhead.style.left = (video.currentTime / duration * 100) + '%';
+  if (els.ovPlayhead && duration) els.ovPlayhead.style.left = (cur / duration * 100) + '%';
 }
 
 // smooth playhead during playback (timeupdate alone fires ~4x/sec)

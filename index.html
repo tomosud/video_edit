@@ -15,7 +15,6 @@
       <span class="brand">ViralCut</span>
       <button id="btnNewProject" class="btn">新規</button>
       <button id="btnOpenProject" class="btn">開く</button>
-      <button id="btnSave" class="btn" disabled title="Ctrl+S">保存</button>
       <span class="sep"></span>
       <button id="btnAddVideo" class="btn" disabled>動画を追加</button>
       <select id="sourceSelect" class="sel" disabled></select>
@@ -87,7 +86,7 @@
         <div class="crop-controls">
           <label>X <input id="panX" type="range" min="0" max="1" step="0.001" value="0.5"></label>
           <label>Y <input id="panY" type="range" min="0" max="1" step="0.001" value="0.5"></label>
-          <label>Z <input id="zoom" type="range" min="1" max="3" step="0.01" value="1"></label>
+          <label>Z <input id="zoom" type="range" min="0.35" max="4" step="0.01" value="1"></label>
         </div>
       </div>
     </section>
