@@ -9,82 +9,89 @@
 </head>
 <body>
   <div id="app">
-    <!-- ===== Header ===== -->
-    <header id="header">
+
+    <!-- ===== Row 1: Menu ===== -->
+    <header id="menu">
       <span class="brand">ViralCut</span>
-      <button id="btnOpenProject" class="btn">プロジェクトを開く</button>
       <button id="btnNewProject" class="btn">新規</button>
-      <button id="btnAddVideo" class="btn" disabled>動画を追加</button>
-      <span class="sep"></span>
-      <button id="btnUndo" class="btn" disabled title="Ctrl+Z">↶ Undo</button>
-      <button id="btnRedo" class="btn" disabled title="Ctrl+Shift+Z">↷ Redo</button>
-      <span class="sep"></span>
+      <button id="btnOpenProject" class="btn">開く</button>
       <button id="btnSave" class="btn" disabled title="Ctrl+S">保存</button>
+      <span class="sep"></span>
+      <button id="btnAddVideo" class="btn" disabled>動画を追加</button>
+      <select id="sourceSelect" class="sel" disabled></select>
+      <span class="sep"></span>
+      <button id="btnUndo" class="btn" disabled title="Ctrl+Z">↶</button>
+      <button id="btnRedo" class="btn" disabled title="Ctrl+Shift+Z">↷</button>
+      <span class="sep"></span>
       <button id="btnExport" class="btn btn-accent" disabled>書き出し</button>
       <span class="spacer"></span>
       <span id="status" class="status">プロジェクト未選択</span>
     </header>
 
-    <!-- ===== Top: source player + 9:16 preview ===== -->
-    <section id="stage">
-      <div id="sourcePane" class="pane">
-        <div class="pane-head">
-          <select id="sourceSelect"></select>
-          <span id="sourceTime" class="time">0:00 / 0:00</span>
+    <!-- ===== Row 2: Source timeline ===== -->
+    <section id="srcPane" class="pane">
+      <div class="pane-head">
+        <span>ソースタイムライン</span>
+        <span class="hint">空クリックでクリップ作成 / 端ドラッグでトリム / ダブルクリックで再生 / ホイールでズーム</span>
+        <span class="spacer"></span>
+        <span id="srcRange" class="time">—</span>
+      </div>
+      <div id="tlScroll" class="tl-scroll">
+        <div id="tlInner" class="tl-inner">
+          <div id="thumbRow" class="thumb-row"></div>
+          <div id="clipBands" class="clip-bands"></div>
+          <div id="tlPlayhead" class="playhead"></div>
         </div>
+      </div>
+    </section>
+
+    <!-- ===== Row 3: Shelf + previews ===== -->
+    <section id="workPane">
+      <div id="shelfPane" class="pane">
+        <div class="pane-head"><span>切り出し素材</span><span class="spacer"></span><span id="shelfCount" class="time">0</span></div>
+        <div id="shelf" class="shelf">
+          <div class="placeholder">タイムラインでクリップを作成</div>
+        </div>
+      </div>
+
+      <div id="origPane" class="pane">
+        <div class="pane-head"><span>元比率プレビュー</span><span class="spacer"></span><span id="origTime" class="time">0:00 / 0:00</span></div>
         <div class="video-wrap">
-          <video id="sourceVideo" playsinline></video>
-          <div id="sourceEmpty" class="empty">動画を追加してください</div>
+          <video id="srcVideo" playsinline></video>
+          <div id="srcEmpty" class="placeholder abs">動画を追加してください</div>
         </div>
         <div class="transport">
-          <button id="btnPlay" class="btn">▶</button>
-          <button id="btnSetIn" class="btn">[ IN</button>
-          <button id="btnSetOut" class="btn">OUT ]</button>
-          <button id="btnAddClip" class="btn btn-accent">＋ クリップ追加</button>
+          <button id="btnPlay" class="btn" title="Space">▶</button>
+          <button id="btnLoop" class="btn" title="範囲ループ">↻ ループ</button>
         </div>
       </div>
 
-      <div id="previewPane" class="pane">
-        <div class="pane-head"><span>出力プレビュー 9:16</span></div>
+      <div id="vertPane" class="pane">
+        <div class="pane-head"><span>縦動画 9:16</span></div>
         <div class="preview-wrap">
-          <canvas id="previewCanvas"></canvas>
+          <canvas id="vertCanvas"></canvas>
         </div>
         <div class="crop-controls">
-          <label>パンX <input id="panX" type="range" min="0" max="1" step="0.001" value="0.5"></label>
-          <label>パンY <input id="panY" type="range" min="0" max="1" step="0.001" value="0.5"></label>
-          <label>ズーム <input id="zoom" type="range" min="1" max="3" step="0.01" value="1"></label>
+          <label>X <input id="panX" type="range" min="0" max="1" step="0.001" value="0.5"></label>
+          <label>Y <input id="panY" type="range" min="0" max="1" step="0.001" value="0.5"></label>
+          <label>Z <input id="zoom" type="range" min="1" max="3" step="0.01" value="1"></label>
         </div>
       </div>
     </section>
 
-    <!-- ===== Middle: source thumbnail strip + trim ===== -->
-    <section id="stripPane" class="pane">
+    <!-- ===== Row 4: Output sequence ===== -->
+    <section id="outPane" class="pane">
       <div class="pane-head">
-        <span>ソース タイムライン</span>
+        <span>出力クリップ（編集）</span>
+        <span class="hint">素材をここへドロップ / ダブルクリックで再生 / ドラッグで並び替え</span>
         <span class="spacer"></span>
-        <label>ズーム <input id="stripZoom" type="range" min="1" max="8" step="0.1" value="1"></label>
-      </div>
-      <div id="stripScroll" class="strip-scroll">
-        <div id="stripInner" class="strip-inner">
-          <div id="thumbRow" class="thumb-row"></div>
-          <div id="trimIn" class="trim-handle trim-in"></div>
-          <div id="trimOut" class="trim-handle trim-out"></div>
-          <div id="trimRange" class="trim-range"></div>
-          <div id="playhead" class="playhead"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ===== Bottom: output clip list ===== -->
-    <section id="clipsPane" class="pane">
-      <div class="pane-head">
-        <span>出力クリップ</span>
         <span id="totalDur" class="time">合計 0:00</span>
       </div>
-      <div id="clipList" class="clip-list">
-        <div class="clip-empty">IN/OUT を決めて「クリップ追加」</div>
+      <div id="outList" class="out-list">
+        <div class="placeholder">素材をドロップして並べる</div>
       </div>
     </section>
+
   </div>
 
   <div id="overlay" class="overlay" hidden>

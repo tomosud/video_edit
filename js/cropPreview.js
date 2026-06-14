@@ -9,8 +9,16 @@ export function init(canvasEl, videoEl) {
   ctx = canvas.getContext('2d');
   video = videoEl;
   resize();
-  window.addEventListener('resize', resize);
-  loop();
+  window.addEventListener('resize', () => { resize(); draw(); });
+
+  // animate only while playing; otherwise redraw on-demand (keeps renderer idle)
+  video.addEventListener('play', startLoop);
+  video.addEventListener('pause', stopLoop);
+  video.addEventListener('ended', stopLoop);
+  video.addEventListener('seeked', draw);
+  video.addEventListener('loadeddata', draw);
+  store.subscribe(draw);   // crop/selection changes
+  draw();
 }
 
 function resize() {
@@ -25,10 +33,10 @@ function resize() {
   canvas.height = Math.round(h * dpr);
 }
 
-// crop config comes from the *draft* (UI) or selected clip; for live preview we
-// read sliders mirrored into store.ui.crop
+// crop config: selected output's crop if any, else the UI draft crop
 function currentCrop() {
-  return store.ui.crop || { panX: 0.5, panY: 0.5, zoom: 1 };
+  const r = store.resolve();
+  return (r && r.crop) || store.ui.crop || { panX: 0.5, panY: 0.5, zoom: 1 };
 }
 
 function draw() {
@@ -61,4 +69,7 @@ function loop() {
   raf = requestAnimationFrame(loop);
 }
 
-export function stop() { cancelAnimationFrame(raf); }
+function startLoop() { if (!raf) loop(); }
+function stopLoop() { cancelAnimationFrame(raf); raf = 0; draw(); }
+
+export function stop() { stopLoop(); }

@@ -1,8 +1,9 @@
 // projectStore.js — project folder I/O (project.json, .gitignore, subtitles/)
 import * as db from './db.js';
 
-const GITIGNORE = `# ViralCut — keep edit data in git, exclude heavy media
+const GITIGNORE = `# ViralCut — keep edit data in git, exclude heavy media & caches
 media/
+cache/
 *.mp4
 *.mov
 *.mkv
@@ -43,9 +44,10 @@ export async function newProject() {
   _dirHandle = dir;
   await db.saveHandle('projectDir', dir);
   await writeFile(dir, '.gitignore', GITIGNORE);
-  // ensure subtitles/ and media/ exist
+  // ensure standard subfolders exist
   await dir.getDirectoryHandle('subtitles', { create: true });
   await dir.getDirectoryHandle('media', { create: true });
+  await dir.getDirectoryHandle('cache', { create: true });
   return dir.name;
 }
 
@@ -88,6 +90,17 @@ export async function readSubtitle(relPath) {
     const sub = await _dirHandle.getDirectoryHandle(folder);
     return await readTextFile(sub, file);
   } catch { return null; }
+}
+
+// Get (creating if needed) a nested directory handle under the project, e.g. "cache/frames/src_x"
+export async function getDir(path, { create = false } = {}) {
+  if (!_dirHandle) return null;
+  let dir = _dirHandle;
+  for (const part of path.split('/').filter(Boolean)) {
+    try { dir = await dir.getDirectoryHandle(part, { create }); }
+    catch { return null; }
+  }
+  return dir;
 }
 
 // Look inside media/ for a file by name (for re-linking)

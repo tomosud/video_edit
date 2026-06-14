@@ -63,40 +63,47 @@ function extOf(file) {
 
 export async function exportProject({ onProgress, onLog, onStatus } = {}) {
   const p = store.get();
-  if (!p.clips.length) throw new Error('クリップがありません');
+  if (!p.outputs.length) throw new Error('出力クリップがありません');
+
+  // resolve outputs -> {output, material, source}
+  const items = p.outputs.map(o => {
+    const m = p.materials.find(x => x.id === o.materialId);
+    return m ? { output: o, material: m, sourceId: m.sourceId } : null;
+  }).filter(Boolean);
+  if (!items.length) throw new Error('有効な出力クリップがありません');
 
   onStatus?.('FFmpeg を読み込み中…');
   const ff = await load(onLog);
   ff.on('progress', ({ progress }) => onProgress?.(progress));
 
   const { width: outW, height: outH, fps } = p.output;
-  const written = new Set();     // sourceId -> written input file
+  const written = new Set();
   const inputName = {};
 
   // write each unique source once
-  for (const clip of p.clips) {
-    if (written.has(clip.sourceId)) continue;
-    const file = fileFor(clip.sourceId);
-    if (!file) throw new Error('未リンクの動画があります: ' + clip.sourceId);
-    const name = `in_${clip.sourceId}.${extOf(file)}`;
+  for (const it of items) {
+    if (written.has(it.sourceId)) continue;
+    const file = fileFor(it.sourceId);
+    if (!file) throw new Error('未リンクの動画があります');
+    const name = `in_${it.sourceId}.${extOf(file)}`;
     onStatus?.(`入力を書き込み中: ${file.name}`);
     await ff.writeFile(name, await fetchFile(file));
-    inputName[clip.sourceId] = name;
-    written.add(clip.sourceId);
+    inputName[it.sourceId] = name;
+    written.add(it.sourceId);
   }
 
-  // render each clip to a normalized segment
+  // render each output clip to a normalized segment
   const segs = [];
-  for (let i = 0; i < p.clips.length; i++) {
-    const clip = p.clips[i];
-    const file = fileFor(clip.sourceId);
+  for (let i = 0; i < items.length; i++) {
+    const { output, material, sourceId } = items[i];
+    const file = fileFor(sourceId);
     const { w, h } = await probeDims(file);
-    const vf = cropFilter(w, h, clip.crop || {}, outW, outH);
+    const vf = cropFilter(w, h, output.crop || {}, outW, outH);
     const seg = `seg_${i}.mp4`;
-    onStatus?.(`クリップ ${i + 1}/${p.clips.length} を処理中…`);
+    onStatus?.(`クリップ ${i + 1}/${items.length} を処理中…`);
     await ff.exec([
-      '-ss', String(clip.in), '-to', String(clip.out),
-      '-i', inputName[clip.sourceId],
+      '-ss', String(material.in), '-to', String(material.out),
+      '-i', inputName[sourceId],
       '-vf', vf,
       '-r', String(fps),
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',

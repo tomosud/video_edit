@@ -6,20 +6,31 @@ const AUTOSAVE_DEBOUNCE = 500;
 
 function emptyProject() {
   return {
-    version: 1,
+    version: 2,
     name: 'untitled',
     output: { width: 1080, height: 1920, fps: 30 },
-    sources: [],   // {id, fileName, relPath, size, lastModified, duration, subtitleFile}
-    clips: [],     // {id, sourceId, in, out, crop:{panX,panY,zoom}, texts:[]}
+    sources: [],     // {id, fileName, relPath, size, lastModified, duration, fps}
+    materials: [],   // {id, sourceId, in, out}            — cutout clips (shelf)
+    outputs: [],     // {id, materialId, crop:{panX,panY,zoom}, texts:[]} — sequence
     bgm: null,
     savedAt: 0,
+  };
+}
+
+function emptyUI() {
+  return {
+    activeSourceId: null,
+    selection: { kind: null, id: null },   // kind: 'material' | 'output'
+    view: { start: 0, end: 0 },            // source-timeline visible window (sec)
+    crop: { panX: 0.5, panY: 0.5, zoom: 1 }, // draft crop for new materials/preview
+    playRange: null,                        // {start,end} active loop range
   };
 }
 
 class Store {
   constructor() {
     this.project = emptyProject();
-    this.ui = { activeSourceId: null, selectedClipId: null };
+    this.ui = emptyUI();
     this._subs = new Set();
     this._undo = [];
     this._redo = [];
@@ -33,11 +44,31 @@ class Store {
   // ---- read ----
   get() { return this.project; }
   getSource(id) { return this.project.sources.find(s => s.id === id); }
-  getClip(id) { return this.project.clips.find(c => c.id === id); }
+  getMaterial(id) { return this.project.materials.find(m => m.id === id); }
+  getOutput(id) { return this.project.outputs.find(o => o.id === id); }
   activeSource() { return this.getSource(this.ui.activeSourceId); }
 
+  // resolve a selection (or any {kind,id}) to {source, in, out, crop, material, output}
+  resolve(sel = this.ui.selection) {
+    if (!sel || !sel.kind) return null;
+    if (sel.kind === 'material') {
+      const m = this.getMaterial(sel.id);
+      if (!m) return null;
+      return { material: m, output: null, source: this.getSource(m.sourceId),
+               in: m.in, out: m.out, crop: null };
+    }
+    if (sel.kind === 'output') {
+      const o = this.getOutput(sel.id);
+      if (!o) return null;
+      const m = this.getMaterial(o.materialId);
+      if (!m) return null;
+      return { material: m, output: o, source: this.getSource(m.sourceId),
+               in: m.in, out: m.out, crop: o.crop };
+    }
+    return null;
+  }
+
   // ---- mutate ----
-  // `commit`: push current state to undo stack before applying (a discrete action)
   update(mutator, { commit = true } = {}) {
     if (commit) this._pushUndo();
     mutator(this.project, this.ui);
@@ -46,22 +77,25 @@ class Store {
     this._scheduleSave();
   }
 
-  // transient update (e.g. dragging) — no history, no redo clear
   updateLive(mutator) {
     mutator(this.project, this.ui);
     this._emit();
     this._scheduleSave();
   }
 
-  setUI(patch) {
-    Object.assign(this.ui, patch);
+  // begin a continuous action (drag): push one undo snapshot now, then use
+  // updateLive(...) for each frame so the whole gesture is a single undo step.
+  beginAction() { this._pushUndo(); this._redo.length = 0; }
+
+  setUI(patch) { Object.assign(this.ui, patch); this._emit(); }
+
+  select(kind, id) {
+    this.ui.selection = { kind, id };
     this._emit();
   }
 
   // ---- history ----
-  _snapshot() {
-    return JSON.stringify({ project: this.project });
-  }
+  _snapshot() { return JSON.stringify({ project: this.project }); }
   _pushUndo() {
     this._undo.push(this._snapshot());
     if (this._undo.length > HISTORY_LIMIT) this._undo.shift();
@@ -73,52 +107,51 @@ class Store {
   undo() {
     if (!this._undo.length) return;
     this._redo.push(this._snapshot());
-    const prev = JSON.parse(this._undo.pop());
-    this.project = prev.project;
-    this._emit();
-    this._scheduleSave();
-    this._persistHistory();
+    this.project = JSON.parse(this._undo.pop()).project;
+    this._emit(); this._scheduleSave(); this._persistHistory();
   }
   redo() {
     if (!this._redo.length) return;
     this._undo.push(this._snapshot());
-    const next = JSON.parse(this._redo.pop());
-    this.project = next.project;
-    this._emit();
-    this._scheduleSave();
-    this._persistHistory();
+    this.project = JSON.parse(this._redo.pop()).project;
+    this._emit(); this._scheduleSave(); this._persistHistory();
   }
 
-  // ---- persistence (IndexedDB autosave layer) ----
+  // ---- persistence (IndexedDB autosave) ----
   _scheduleSave() {
     clearTimeout(this._saveTimer);
-    this._saveTimer = setTimeout(() => {
-      db.saveAutosave(this.project).catch(console.error);
-    }, AUTOSAVE_DEBOUNCE);
+    this._saveTimer = setTimeout(() => db.saveAutosave(this.project).catch(console.error), AUTOSAVE_DEBOUNCE);
   }
-  _persistHistory() {
-    db.saveHistory({ undo: this._undo, redo: this._redo }).catch(() => {});
-  }
+  _persistHistory() { db.saveHistory({ undo: this._undo, redo: this._redo }).catch(() => {}); }
 
   async restore() {
     const saved = await db.loadAutosave();
-    if (saved) this.project = saved;
+    if (saved) this.project = migrate(saved);
     const hist = await db.loadHistory();
     if (hist) { this._undo = hist.undo || []; this._redo = hist.redo || []; }
     this._emit();
     return !!saved;
   }
 
-  // ---- replace whole project (open project) ----
   load(project) {
-    this.project = { ...emptyProject(), ...project };
+    this.project = migrate({ ...emptyProject(), ...project });
     this._undo = []; this._redo = [];
+    this.ui = emptyUI();
     this.ui.activeSourceId = this.project.sources[0]?.id || null;
-    this.ui.selectedClipId = null;
-    this._emit();
-    this._scheduleSave();
-    this._persistHistory();
+    this._emit(); this._scheduleSave(); this._persistHistory();
   }
+}
+
+// migrate older (v1: clips[]) projects to v2 (materials/outputs)
+function migrate(p) {
+  if (p.version >= 2) return p;
+  const materials = [], outputs = [];
+  for (const c of (p.clips || [])) {
+    const mId = c.id || uid('mat');
+    materials.push({ id: mId, sourceId: c.sourceId, in: c.in, out: c.out });
+    outputs.push({ id: uid('out'), materialId: mId, crop: c.crop || { panX: .5, panY: .5, zoom: 1 }, texts: c.texts || [] });
+  }
+  return { ...p, version: 2, materials, outputs, clips: undefined };
 }
 
 export const store = new Store();
