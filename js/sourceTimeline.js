@@ -1,9 +1,8 @@
 // sourceTimeline.js — zoomable, multi-clip source timeline
 import { store, uid } from './store.js';
-import { generateWindow } from './thumbnails.js';
+import { generateWindow, spacing } from './thumbnails.js';
 import { fmtTime } from './util.js';
 
-const DEFAULT_CLIP_SEC = 3;      // fixed width of a click-created clip
 const FOCUS_MARGIN = 0.3;        // extra view beyond a selected clip (fraction of clip len)
 const REGEN_DEBOUNCE = 140;
 
@@ -20,6 +19,8 @@ export function init(elements, videoEl) {
 
   els.scroll.addEventListener('wheel', onWheel, { passive: false });
   els.inner.addEventListener('pointerdown', onInnerDown);
+  els.inner.addEventListener('dblclick', onInnerDblClick);
+  els.inner.addEventListener('contextmenu', (e) => e.preventDefault()); // allow right-drag pan
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
   window.addEventListener('resize', () => { layout(); scheduleRegen(); });
@@ -72,39 +73,48 @@ function onWheel(e) {
   scheduleRegen();
 }
 
-// ---------- pointer: pan / create / band drag ----------
-let gesture = null; // { type, ... }
+// ---------- pointer gestures ----------
+// left button : click band = select; drag selected band = move; drag handle = resize
+// right button: drag anywhere = pan the view window
+// (clip creation is on double-click of empty area; see onInnerDblClick)
+let gesture = null;
 
 function onInnerDown(e) {
   if (!duration) return;
+
+  // right button anywhere -> pan
+  if (e.button === 2) {
+    e.preventDefault();
+    gesture = { type: 'pan', startX: e.clientX, startView: { ...view() } };
+    return;
+  }
+  if (e.button !== 0) return;
+
   const band = e.target.closest('.clip-band');
   if (band) {
     const id = band.dataset.id;
-    const handle = e.target.classList.contains('h') ? (e.target.classList.contains('l') ? 'in' : 'out') : null;
-    store.select('material', id);
-    if (handle) {
-      store.beginAction();
-      gesture = { type: 'resize', id, edge: handle };
+    store.ui._fromTimeline = true;                // don't auto-focus the view
+    store.select('material', id);                 // left-click selects
+    const m = store.getMaterial(id);
+    if (e.target.classList.contains('h')) {
+      const edge = e.target.classList.contains('l') ? 'in' : 'out';
+      gesture = { type: 'resize', id, edge, started: false };
     } else {
-      store.beginAction();
-      const m = store.getMaterial(id);
-      gesture = { type: 'move', id, grabDT: xToTime(e.clientX) - m.in };
+      gesture = { type: 'move', id, grabDT: xToTime(e.clientX) - m.in, started: false };
     }
     e.preventDefault();
     return;
   }
-  // empty area: start as potential pan; becomes "create" if no movement
-  gesture = { type: 'maybe', startX: e.clientX, startTime: xToTime(e.clientX), startView: { ...view() }, moved: false };
+
+  // left-click on empty area -> just deselect (no creation, no pan)
+  store.select(null, null);
+  gesture = null;
 }
 
 function onPointerMove(e) {
   if (!gesture) return;
-  if (gesture.type === 'maybe') {
-    if (Math.abs(e.clientX - gesture.startX) > 4) gesture.type = 'pan';
-    else return;
-  }
+
   if (gesture.type === 'pan') {
-    const rect = els.inner.getBoundingClientRect();
     const dt = ((e.clientX - gesture.startX) / innerW()) * (gesture.startView.end - gesture.startView.start);
     let start = gesture.startView.start - dt;
     let end = gesture.startView.end - dt;
@@ -114,8 +124,15 @@ function onPointerMove(e) {
     store.ui.view = { start, end };
     layout();
     scheduleRegen();
-  } else if (gesture.type === 'move') {
-    const m = store.getMaterial(gesture.id);
+    return;
+  }
+
+  // move / resize operate only on the selected clip; commit one undo on first move
+  if (!gesture.started) { store.beginAction(); gesture.started = true; }
+  const m = store.getMaterial(gesture.id);
+  if (!m) { gesture = null; return; }
+
+  if (gesture.type === 'move') {
     const len = m.out - m.in;
     let nin = clampT(xToTime(e.clientX) - gesture.grabDT);
     let nout = nin + len;
@@ -123,7 +140,6 @@ function onPointerMove(e) {
     store.updateLive(() => { m.in = nin; m.out = nout; });
     layout();
   } else if (gesture.type === 'resize') {
-    const m = store.getMaterial(gesture.id);
     const t = clampT(xToTime(e.clientX));
     store.updateLive(() => {
       if (gesture.edge === 'in') m.in = Math.min(t, m.out - 1 / fps);
@@ -133,20 +149,23 @@ function onPointerMove(e) {
   }
 }
 
-function onPointerUp(e) {
-  if (!gesture) return;
-  if (gesture.type === 'maybe') {
-    // click on empty -> create a fixed-width clip centered on cursor
-    const t = clampT(gesture.startTime);
-    let nin = clampT(t - DEFAULT_CLIP_SEC / 2);
-    let nout = clampT(nin + DEFAULT_CLIP_SEC);
-    if (nout - nin < DEFAULT_CLIP_SEC * 0.5) nin = clampT(nout - DEFAULT_CLIP_SEC);
-    const id = uid('mat');
-    store.update((p) => p.materials.push({ id, sourceId: curSourceId, in: nin, out: nout }));
-    store.select('material', id);
-    if (video) video.currentTime = nin;
-  }
-  gesture = null;
+function onPointerUp() { gesture = null; }
+
+// double-click on empty area -> create a clip one displayed-frame (cell) wide.
+// Does NOT change zoom/view.
+function onInnerDblClick(e) {
+  if (!duration) return;
+  if (e.target.closest('.clip-band')) return; // band dbl-click = play (handled per band)
+  const t = clampT(xToTime(e.clientX));
+  const count = Math.max(6, Math.round(innerW() / spacing()));
+  const cellDur = Math.max(1 / fps, span() / count);
+  let nin = clampT(t - cellDur / 2);
+  let nout = clampT(nin + cellDur);
+  if (nout <= nin) nin = clampT(nout - cellDur);
+  const id = uid('mat');
+  store.update((p) => p.materials.push({ id, sourceId: curSourceId, in: nin, out: nout }));
+  store.ui._fromTimeline = true;                 // creating shouldn't move the view
+  store.select('material', id);
 }
 
 // ---------- focus to a selected material ----------

@@ -27,7 +27,7 @@ body {
 #app {
   height: 100vh;
   display: grid;
-  grid-template-rows: 50px 1.1fr 1.5fr 1fr;
+  grid-template-rows: 50px 0.58fr 1.6fr 1fr;
   gap: 8px;
   padding: 8px;
 }
@@ -48,6 +48,7 @@ body {
 .btn:disabled { opacity: .4; cursor: default; }
 .btn-accent { background: var(--accent-2); border-color: var(--accent); }
 .btn-accent:hover:not(:disabled) { background: var(--accent); }
+.btn-sm { padding: 3px 9px; min-height: 26px; font-size: 12px; }
 .sel {
   background: var(--panel-2); color: var(--text);
   border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-height: 34px;

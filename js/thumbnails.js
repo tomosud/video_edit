@@ -3,7 +3,7 @@ import * as frameCache from './frameCache.js';
 import { urlFor } from './fileOpen.js';
 
 const THUMB_H = 132;             // fixed thumbnail pixel height (cache key is frame index only)
-const TARGET_SPACING = 90;       // approx px between thumbs
+const TARGET_SPACING = 200;      // approx px per thumb — wider (landscape) cells
 
 const pool = new Map();          // sourceId -> { video, ready }
 

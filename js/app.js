@@ -15,13 +15,14 @@ const el = {};
  'btnExport','status','srcVideo','srcEmpty','origTime','btnPlay','btnLoop','vertCanvas',
  'panX','panY','zoom','overlay','overlayMsg','overlayProg',
  'tlScroll','tlInner','thumbRow','clipBands','tlPlayhead','srcRange',
- 'shelf','shelfCount','outList','totalDur'].forEach(id => el[id] = $(id));
+ 'shelf','shelfCount','outList','totalDur','btnPlayOut','btnStopOut'].forEach(id => el[id] = $(id));
 
 let projectOpen = false;
 let activeUrl = null;
 let pendingSeek = null;
 let lastSelKey = '';
 let loopEnabled = true;
+let sequence = null;   // { items:[{sourceId,in,out}], i } during 連続再生
 
 function init() {
   cropPreview.init(el.vertCanvas, el.srcVideo);
@@ -87,15 +88,65 @@ function wireTransport() {
   el.srcVideo.addEventListener('pause', () => el.btnPlay.textContent = '▶');
   el.srcVideo.addEventListener('timeupdate', () => {
     el.origTime.textContent = `${fmtTime(el.srcVideo.currentTime)} / ${fmtTime(el.srcVideo.duration)}`;
+    // sequential output playback takes priority
+    if (sequence) {
+      const it = sequence.items[sequence.i];
+      if (it && el.srcVideo.currentTime >= it.out - 0.03) advanceSequence();
+      return;
+    }
     const r = store.ui.playRange;
     if (loopEnabled && r && el.srcVideo.currentTime >= r.end - 0.02) el.srcVideo.currentTime = r.start;
   });
   el.btnLoop.style.color = 'var(--accent)';
+
+  el.btnPlayOut.onclick = playOutputs;
+  el.btnStopOut.onclick = stopSequence;
 }
 
 function playRange(a, b) {
+  stopSequence();
   store.ui.playRange = { start: a, end: b };
   seekTo(a, () => el.srcVideo.play());
+}
+
+// ---- sequential playback of the output sequence ----
+function playOutputs() {
+  const p = store.get();
+  const items = p.outputs.map(o => {
+    const m = store.getMaterial(o.materialId);
+    return m ? { sourceId: m.sourceId, in: m.in, out: m.out } : null;
+  }).filter(Boolean);
+  if (!items.length) return;
+  store.ui.playRange = null;
+  sequence = { items, i: 0 };
+  el.btnStopOut.disabled = false;
+  playSequenceItem();
+}
+
+function playSequenceItem() {
+  const it = sequence.items[sequence.i];
+  ensureSource(it.sourceId, () => {
+    el.srcVideo.currentTime = it.in;
+    el.srcVideo.play();
+  });
+}
+
+function advanceSequence() {
+  if (!sequence) return;
+  sequence.i++;
+  if (sequence.i >= sequence.items.length) { stopSequence(); el.srcVideo.pause(); return; }
+  playSequenceItem();
+}
+
+function stopSequence() {
+  sequence = null;
+  el.btnStopOut.disabled = true;
+}
+
+function ensureSource(sourceId, cb) {
+  if (store.ui.activeSourceId === sourceId && el.srcVideo.readyState >= 1) { cb(); return; }
+  if (store.ui.activeSourceId !== sourceId) store.setUI({ activeSourceId: sourceId });
+  el.srcVideo.addEventListener('loadeddata', cb, { once: true });
 }
 
 function seekTo(t, cb) {
@@ -179,6 +230,8 @@ function onState(project, ui) {
 }
 
 function applySelection() {
+  const fromTL = store.ui._fromTimeline;
+  store.ui._fromTimeline = false;
   const r = store.resolve();
   if (!r || !r.source) return;
   if (r.source.id !== store.ui.activeSourceId) {
@@ -187,7 +240,9 @@ function applySelection() {
   } else {
     seekTo(r.in);
   }
-  if (r.material) queueMicrotask(() => srcTimeline.focusMaterial(r.material));
+  // focus the view to the clip only for shelf/output navigation, not timeline clicks
+  // (timeline view should change via wheel/right-drag only)
+  if (!fromTL && r.material) queueMicrotask(() => srcTimeline.focusMaterial(r.material));
 }
 
 function bindVideo(ui) {
@@ -212,6 +267,7 @@ function updateChrome() {
   el.sourceSelect.disabled = !p.sources.length;
   el.btnSave.disabled = !projectOpen || !projectStore.dirHandle();
   el.btnExport.disabled = !p.outputs.length;
+  el.btnPlayOut.disabled = !p.outputs.length;
   el.btnUndo.disabled = !store.canUndo();
   el.btnRedo.disabled = !store.canRedo();
 }
