@@ -288,6 +288,7 @@ ffmpeg
 - `coi-serviceworker.js` を `index.html` で最初に登録
 - `Cross-Origin-Opener-Policy: same-origin` と `Cross-Origin-Embedder-Policy: require-corp` をフェイクヘッダーとして Service Worker が注入
 - これにより `SharedArrayBuffer` が有効になり FFmpeg.wasm のマルチスレッドが動作
+- **フォールバック**: `crossOriginIsolated` が false（iframe 埋め込みプレビュー等）の場合は `@ffmpeg/core`（シングルスレッド）を自動選択し、SharedArrayBuffer 無しでも書き出し可能にする。GitHub Pages のトップレベル遷移ではマルチスレッド版が有効になる。
 
 ---
 
