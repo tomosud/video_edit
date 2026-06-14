@@ -1,5 +1,10 @@
 # ViralCut — GitHub Pages Vertical Video Editor
 
+> **実装状況メモ（2026-06）**: この設計書は当初計画。実装が進む中で書き出し方式などが
+> 変わっている。**現状の実装理由・未解決・未実装は [HANDOFF.md](HANDOFF.md) を必ず併読**すること。
+> 特に「書き出し」は当初の FFmpeg.wasm 完結方式から**ブラウザネイティブ録画（MediaRecorder）方式**へ
+> 変更済み（理由は HANDOFF.md §3）。本書では実態に合わせた箇所に *(実装)* と注記している。
+
 ## 概要
 
 GitHub Pages にホストできる静的 Web アプリ。  
@@ -15,8 +20,8 @@ GitHub Pages にホストできる静的 Web アプリ。
 | 出力形式 | 縦型 9:16、H.264/AAC MP4 |
 | クリップ長 | 目安 10〜20 秒 |
 | 素材規模 | 1 時間級の大容量動画も想定 |
-| エンコード | ブラウザ内完結（FFmpeg.wasm） |
-| 文字起こし | ブラウザ内完結（Whisper.cpp WASM） |
+| エンコード | ブラウザ内完結（*実装*: MediaRecorder 録画。WebM 録画時のみ FFmpeg.wasm で MP4 変換） |
+| 文字起こし | ブラウザ内完結（Whisper.cpp WASM）*未実装* |
 
 ---
 
@@ -105,13 +110,15 @@ FFmpeg.wasm でエンコード → MP4 ダウンロード
 |---|---|---|
 | UI フレームワーク | Vanilla JS（ES Modules） | 依存ゼロ、GitHub Pages 相性◎ |
 | 動画読み込み | File System Access API + `<video>` | 巨大ファイルをストリーミング、メモリ効率 |
-| サムネイル生成 | WebCodecs API（`VideoDecoder`） | FFmpeg 不使用でフレーム高速展開 |
-| エンコード／書き出し | FFmpeg.wasm（`@ffmpeg/ffmpeg`） | H.264 + クロップ + テキスト焼き込み |
-| 文字起こし | whisper.wasm（`ggerganov/whisper.cpp` WASM ビルド） or `@xenova/transformers` Whisper | ローカル推論 |
-| 字幕フォーマット | WebVTT（`.vtt`） | ブラウザネイティブ |
+| サムネイル生成 | *実装*: プール `<video>` をフレーム単位でシーク（`requestVideoFrameCallback`）+ frameCache。当初は WebCodecs 想定だったが、シーク方式に変更 | 実装の単純さと安定性 |
+| エンコード／書き出し | *実装*: MediaRecorder でネイティブ録画（§書き出し参照）。FFmpeg.wasm は WebM→MP4 変換のフォールバックのみ | 大容量 AV1 を FFmpeg.wasm が扱えず方針転換（HANDOFF.md §3） |
+| 文字起こし | whisper.wasm or `@xenova/transformers` Whisper *未実装* | ローカル推論 |
+| 字幕フォーマット | WebVTT（`.vtt`）*未実装* | ブラウザネイティブ |
 | スタイル | CSS Grid / Custom Properties | ライブラリ不要 |
 
-> **FFmpeg.wasm の CORS 要件**: SharedArrayBuffer が必要。GitHub Pages は COOP/COEP ヘッダーを送らないため、`coi-serviceworker` ライブラリで代替する。
+> **SharedArrayBuffer / CORS 要件**: FFmpeg.wasm のマルチスレッドや一部 API に SharedArrayBuffer が必要。
+> GitHub Pages は COOP/COEP ヘッダーを送らないため、`coi-serviceworker` ライブラリで代替する。
+> （現在 FFmpeg.wasm は MP4 変換フォールバック時のみ使用。）
 
 ---
 
@@ -134,12 +141,12 @@ video_edit/
 │   ├── materialShelf.js   # 切り出し素材カード（選択・再生・出力へドラッグ）
 │   ├── cropPreview.js     # 9:16 Canvas プレビュー（選択の crop を反映）
 │   ├── outputSequence.js  # 出力クリップ（ドロップ・並び替え・選択・再生）
-│   ├── util.js            # 時間フォーマット等
-│   ├── export.js          # FFmpeg.wasm（MT/STフォールバック、outputs→materials）
-│   ├── subtitles.js       # [Phase2] VTT パース・字幕行 UI
-│   ├── whisper.js         # [Phase2] Whisper WASM ラッパー
-│   ├── textOverlay.js     # [Phase2] テキスト／字幕オーバーレイ
-│   └── bgm.js             # [Phase3] BGM 管理・音量
+│   ├── util.js            # 時間フォーマット、makeScrubber、hashKey 等
+│   ├── export.js          # *実装*: MediaRecorder ネイティブ録画。WebM時のみ FFmpeg.wasm で MP4 変換
+│   ├── (subtitles.js)     # [Phase2 未実装] VTT パース・字幕行 UI
+│   ├── (whisper.js)       # [Phase2 未実装] Whisper WASM ラッパー
+│   ├── (textOverlay.js)   # [Phase2 未実装] テキスト／字幕オーバーレイ
+│   └── (bgm.js)           # [Phase3 未実装] BGM 管理・音量
 ├── lib/
 │   └── coi-serviceworker.js  # SharedArrayBuffer COOP/COEP 代替
 └── run_local.bat
@@ -254,32 +261,31 @@ media/
 
 ## 実装フェーズ
 
-### Phase 1 — MVE（最小動作エディタ）
+### Phase 1 — MVE（最小動作エディタ）— 実装済み
 
-- [ ] `index.html` / `css/style.css` — レイアウト骨格
-- [ ] `fileOpen.js` — File System Access API で動画を `<video>` に接続
-- [ ] `thumbnails.js` — WebCodecs でサムネイルストリップ生成
-- [ ] `trimTimeline.js` — IN/OUT ドラッグ + キーボードショートカット
-- [ ] `clipList.js` — クリップ追加・並び替え・削除
-- [ ] `cropPreview.js` — 9:16 Canvas プレビュー、パン操作
-- [ ] `db.js` — IndexedDB ラッパー、`autosave` デバウンス保存・リロード復帰
-- [ ] `history.js` — Undo/Redo スタック（`Ctrl+Z` / `Ctrl+Shift+Z`）
-- [ ] `projectStore.js` — プロジェクトフォルダを開く／`project.json` 読み書き／`.gitignore` 生成
-- [ ] `export.js` — FFmpeg.wasm でクロップ＋結合 MP4 書き出し
-- [ ] `coi-serviceworker.js` 組み込み
-- [ ] `run_local.bat` — ローカルテスト用サーバー起動
+- [x] `index.html` / `css/style.css` — レイアウト骨格
+- [x] `fileOpen.js` — File System Access API で動画を `<video>` に接続（+ fps 検出 probeFps）
+- [x] `thumbnails.js` — サムネイル生成（*実装*: WebCodecs ではなく `<video>` シーク方式）
+- [x] `sourceTimeline.js` — IN/OUT ドラッグ・ズーム・オーバービュー（`trimTimeline.js`/`clipList.js` の役割を統合）
+- [x] `cropPreview.js` — 9:16 Canvas プレビュー、パン/ズーム
+- [x] `db.js` — IndexedDB ラッパー、`autosave` デバウンス保存・リロード復帰
+- [x] Undo/Redo — *実装*: `store.js` 内にスナップショットとして統合（`history.js` は作らず）
+- [x] `projectStore.js` — プロジェクトフォルダを開く／`project.json` 読み書き／`.gitignore` 生成／`media/` コピー
+- [x] `export.js` — *実装*: MediaRecorder ネイティブ録画で MP4 書き出し（当初の FFmpeg.wasm 完結方式から変更）
+- [x] `coi-serviceworker.js` 組み込み
+- [x] `run_local.bat` — ローカルテスト用サーバー起動
 
-### Phase 2 — 字幕
+### Phase 2 — 字幕（未実装）
 
 - [ ] `subtitles.js` — VTT インポート＋字幕行クリックでシーク
 - [ ] `whisper.js` — Whisper WASM 文字起こし（モデル選択 UI、`models` キャッシュ）
-- [ ] `textOverlay.js` — 字幕テキストの Canvas 焼き込み設定
+- [ ] `textOverlay.js` — 字幕テキストの Canvas 焼き込み設定（現録画方式なら `drawFrame` 後に `fillText` で焼き込める）
 
-### Phase 3 — 仕上げ
+### Phase 3 — 仕上げ（一部実装）
 
 - [ ] `bgm.js` — BGM トラック追加・フェード・音量
-- [ ] 複数ソース動画切り替え（ドロップゾーン）
-- [ ] 動画再リンク UI（プロジェクト再オープン時に欠落メディアを解決）
+- [x] 複数ソース動画切り替え（ソース選択▼）
+- [~] 動画再リンク UI（`fileOpen.relinkAll` / `freshFileFor` で基本対応、UX は未洗練）
 - [ ] モバイル対応（タッチ操作）
 
 ---
@@ -290,29 +296,28 @@ media/
 - `showOpenFilePicker()` → `FileSystemFileHandle` → `File` → `URL.createObjectURL()` で `<video src>` に直接割り当て
 - メモリにロードしない。Chrome/Edge のみ（Safari は 2024 時点で未サポートだが fallback として `<input type="file">` を用意）
 
-### WebCodecs サムネイル
-- `VideoDecoder` に `EncodedVideoChunk` を流してフレームを `ImageBitmap` で取得
-- デマックスは MP4Box.js（`mp4box.js`）を使用
+### サムネイル生成（*実装*: `<video>` シーク方式）
+- 当初は WebCodecs（`VideoDecoder` + MP4Box.js）を想定していたが、**実装はプールした `<video>` をフレーム境界にシークして canvas に描画**し、`frameCache.js`（メモリ LRU + `cache/` 書き戻し）に保持する方式に変更。
+- ズーム時（`framePx >= 22px`）は 1 フレーム = 1 セルでフレーム境界に正確配置、引いたらサンプリング表示。
+- キャッシュキーは `source.mediaKey`（ファイル名+サイズの SHA-256 先頭）。同じ動画なら再オープンでもキャッシュ再利用。
 
-### Whisper.wasm
+### Whisper.wasm（*未実装*）
 - モデルサイズ: tiny（75MB）→ base（145MB）→ small（465MB）
 - 初回ロードは遅い。IndexedDB にキャッシュして 2 回目から高速化
-- 文字起こし対象: FFmpeg.wasm で 16kHz モノラル WAV を抽出 → Whisper に渡す
+- 文字起こし対象: 16kHz モノラル WAV を抽出 → Whisper に渡す
 
-### FFmpeg.wasm エクスポートコマンド例
-```
-ffmpeg
-  -i clip1.mp4 -i clip2.mp4 ...       # 入力クリップ（仮想 FS）
-  -filter_complex
-    "[0:v]crop=ih*9/16:ih:(iw-ih*9/16)/2+<panX>:0,scale=1080:1920[v0];
-     [1:v]crop=...[v1];
-     [v0][v1]concat=n=2:v=1:a=0[vout];
-     [0:a][1:a]concat=n=2:v=0:a=1[aout]"
-  -map [vout] -map [aout]
-  -c:v libx264 -preset fast -crf 23
-  -c:a aac -b:a 128k
-  output.mp4
-```
+### 書き出し（*実装*: MediaRecorder ネイティブ録画）
+
+当初は FFmpeg.wasm で trim + crop + concat する計画だったが、**大容量 AV1 ソースで動かず**方針転換した
+（詳細な障害と理由は [HANDOFF.md](HANDOFF.md) §3）。現在の処理：
+
+1. 出力クリップをソースごとに `<video>` でデコードし、**9:16 canvas にクロップ描画**（クロップ計算は `cropPreview.js` と一致）。
+2. 音声は WebAudio で `createMediaElementSource → MediaStreamDestination` にタップ。
+3. `canvas.captureStream(fps)` の映像 + 音声を 1 本の `MediaStream` にまとめ、**1 つの MediaRecorder で全クリップを連続録画**（クリップ境界で pause/resume）。
+4. MP4 を直接録画できる環境はそのまま MP4。できなければ WebM で録り、**その小さいクロップ済み出力だけ** FFmpeg.wasm で MP4 変換。
+
+> **トレードオフ**: リアルタイム録画なので書き出し時間 ≈ 合計クリップ尺。録画中はタブを前面に保つ必要あり。
+> 高速化するなら WebCodecs `VideoEncoder` への移行が本命だが実装コスト大（HANDOFF.md §6）。
 
 ### coi-serviceworker
 - `coi-serviceworker.js` を `index.html` で最初に登録
