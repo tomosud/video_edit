@@ -125,7 +125,7 @@ Mediabunny を npm dependency として使うため、現行の静的 ES modules
 
 - 新規追加では `media/` へコピーしない。
 - プロジェクト保存には `relPath` を書かない。
-- `.gitignore` から `media/` 前提を削除する。`cache/` はサムネイルファイルキャッシュ廃止まで一時的に ignore する。
+- `.gitignore` から `media/` / `cache/` 前提を削除する。
 - 旧プロジェクトの `media/` コピー互換は持たない。
 
 IndexedDB:

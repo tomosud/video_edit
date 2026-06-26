@@ -1,8 +1,7 @@
 // projectStore.js — project folder I/O (project.json, .gitignore, subtitles/)
 import * as db from './db.js';
 
-const GITIGNORE = `# ViralCut — keep edit data in git, exclude generated caches
-cache/
+const GITIGNORE = `# ViralCut — keep edit data in git, source media stays at original paths
 *.mp4
 *.mov
 *.mkv
@@ -87,15 +86,4 @@ export async function readSubtitle(relPath) {
     const sub = await _dirHandle.getDirectoryHandle(folder);
     return await readTextFile(sub, file);
   } catch { return null; }
-}
-
-// Get (creating if needed) a nested directory handle under the project, e.g. "cache/frames/src_x"
-export async function getDir(path, { create = false } = {}) {
-  if (!_dirHandle) return null;
-  let dir = _dirHandle;
-  for (const part of path.split('/').filter(Boolean)) {
-    try { dir = await dir.getDirectoryHandle(part, { create }); }
-    catch { return null; }
-  }
-  return dir;
 }

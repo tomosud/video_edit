@@ -1,11 +1,11 @@
 // outputSequence.js — output clips (editing place): drop, reorder, select, play
 import { store, uid } from './store.js';
-import { cardThumb } from './thumbnails.js';
+import { cardThumb, cloneCanvas } from './thumbnails.js';
 import { fmtDur } from './util.js';
 
 let listEl, totalEl;
 let onPlay = () => {};
-const thumbs = new Map();   // outputId -> objectURL
+const thumbs = new Map();   // outputId -> HTMLCanvasElement
 const thumbSig = new Map(); // outputId -> mid-frame signature
 const thumbBusy = new Map();// outputId -> bool
 
@@ -59,13 +59,13 @@ async function ensureThumb(o) {
   thumbBusy.set(o.id, true);
   let ok = false;
   try {
-    const url = await cardThumb(src, (m.in + m.out) / 2);
-    if (url) {
+    const canvas = await cardThumb(src, (m.in + m.out) / 2);
+    if (canvas) {
       ok = true;
-      thumbs.set(o.id, url);
+      thumbs.set(o.id, canvas);
       thumbSig.set(o.id, sig);
-      const img = listEl.querySelector(`.card[data-id="${o.id}"] img.thumb`);
-      if (img) img.src = url;
+      const slot = listEl.querySelector(`.card[data-id="${o.id}"] .thumb`);
+      if (slot) slot.replaceChildren(cloneCanvas(canvas));
     }
   } catch { /* media not linked / decode failed */ }
   finally {
@@ -87,9 +87,9 @@ function card(o, selected) {
   el.draggable = true;
   el.dataset.id = o.id;
 
-  const img = document.createElement('img');
-  img.className = 'thumb';
-  if (thumbs.has(o.id)) img.src = thumbs.get(o.id);
+  const thumb = document.createElement('div');
+  thumb.className = 'thumb';
+  if (thumbs.has(o.id)) thumb.appendChild(cloneCanvas(thumbs.get(o.id)));
 
   const meta = document.createElement('div');
   meta.className = 'meta';
@@ -100,7 +100,7 @@ function card(o, selected) {
   del.onclick = (e) => { e.stopPropagation(); deleteOutput(o.id); };
   meta.appendChild(del);
 
-  el.appendChild(img); el.appendChild(meta);
+  el.appendChild(thumb); el.appendChild(meta);
   el.onclick = () => store.select('output', o.id);
   el.ondblclick = () => { if (m) onPlay(m.in, m.out); };
   wireDrag(el);

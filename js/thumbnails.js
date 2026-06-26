@@ -1,91 +1,121 @@
-// thumbnails.js — frame-indexed thumbnails via pooled <video> seeking + frameCache
-import * as frameCache from './frameCache.js';
-import { urlFor } from './fileOpen.js';
+// thumbnails.js - Mediabunny CanvasSink thumbnails, memory-only
+import { ALL_FORMATS, BlobSource, CanvasSink, Input } from '../lib/mediabunny.min.js';
+import { fileFor } from './fileOpen.js';
 
-const THUMB_H = 132;             // fixed thumbnail pixel height (cache key is frame index only)
-const TARGET_SPACING = 200;      // approx px per thumb — wider (landscape) cells
-const CACHE_VERSION = 'thumb-v2';
+const THUMB_H = 132;
+const TARGET_SPACING = 200;
+const FRAME_CELL_MIN_PX = 22;
+const MEM_LIMIT = 700;
 
-const pool = new Map();          // sourceId -> { video, ready, chain }
+const sessions = new Map(); // sourceId -> { file, input, sink, ready, chain, height }
+const mem = new Map();      // key -> HTMLCanvasElement (Map order = LRU)
+const pending = new Map();  // key -> Promise<HTMLCanvasElement>
 
-function pooledEntry(source) {
-  if (pool.has(source.id)) return pool.get(source.id);
-  const url = urlFor(source.id);
-  if (!url) throw new Error('source not linked');
-  const video = document.createElement('video');
-  video.preload = 'auto'; video.muted = true;
-  const ready = new Promise((resolve, reject) => {
-    video.onloadeddata = () => resolve(video);
-    video.onerror = () => reject(new Error('thumb video load failed'));
-    video.src = url;
-  });
-  const entry = { video, ready, chain: Promise.resolve() };
-  pool.set(source.id, entry);
+const dpr = () => Math.min(window.devicePixelRatio || 1, 2);
+const sourceKeyOf = (source) => source.mediaKey || source.id;
+const frameKey = (source, frame, height) => `${sourceKeyOf(source)}/f/${frame}/h/${height}`;
+const cardKey = (source, frame, width, height) => `${sourceKeyOf(source)}/card/${frame}/${width}x${height}`;
+
+export function cloneCanvas(source) {
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, source.width || 1);
+  c.height = Math.max(1, source.height || 1);
+  const ctx = c.getContext('2d');
+  if (ctx && source.width && source.height) ctx.drawImage(source, 0, 0);
+  return c;
+}
+
+function lruGet(key) {
+  const v = mem.get(key);
+  if (v) { mem.delete(key); mem.set(key, v); }
+  return v || null;
+}
+
+function lruPut(key, canvas) {
+  mem.set(key, canvas);
+  while (mem.size > MEM_LIMIT) {
+    const oldKey = mem.keys().next().value;
+    mem.delete(oldKey);
+  }
+  return canvas;
+}
+
+function disposeSession(entry) {
+  try { entry.input?.dispose(); } catch { /* ignore */ }
+}
+
+function sessionFor(source, height) {
+  const file = fileFor(source.id);
+  if (!file) throw new Error('source not linked');
+
+  const existing = sessions.get(source.id);
+  if (existing && existing.file === file && existing.height === height) return existing;
+  if (existing) disposeSession(existing);
+
+  const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
+  const ready = (async () => {
+    if (!(await input.canRead())) throw new Error('media cannot be read');
+    const videoTrack = await input.getPrimaryVideoTrack();
+    if (!videoTrack) throw new Error('no video track');
+    if (!(await videoTrack.canDecode().catch(() => false))) throw new Error('video track cannot decode');
+    return new CanvasSink(videoTrack, { poolSize: 1, height, fit: 'cover' });
+  })();
+  const entry = { file, input, sink: null, ready, chain: Promise.resolve(), height };
+  entry.ready = ready.then((sink) => { entry.sink = sink; return sink; });
+  sessions.set(source.id, entry);
   return entry;
 }
 
-function seekDraw(video, t, h) {
-  return new Promise((resolve) => {
-    const draw = () => {
-      if (done) return;
-      done = true;
-      video.removeEventListener('seeked', onSeeked);
-      const aspect = (video.videoWidth || 16) / (video.videoHeight || 9);
-      const w = Math.round(h * aspect);
-      const c = document.createElement('canvas');
-      c.width = w; c.height = h;
-      c.getContext('2d').drawImage(video, 0, 0, w, h);
-      resolve(c);
-    };
-    const presentThenDraw = () => requestAnimationFrame(draw);
-    const onSeeked = () => presentThenDraw();
-    let done = false;
-    video.addEventListener('seeked', onSeeked);
-    const dur = video.duration || t;
-    const target = Math.max(0, Math.min(t, dur - 0.03));
-    video.currentTime = target;
-    if (!video.seeking && Math.abs(video.currentTime - target) < 1e-4) presentThenDraw();
-  });
-}
-
-const dpr = () => Math.min(window.devicePixelRatio || 1, 2);
-
-// On-disk frame cache is keyed by the media hash (mediaKey) so it persists and
-// matches across sessions/re-imports of the same file; falls back to the random
-// session id for legacy sources without a mediaKey.
-const cacheKeyOf = (source) => `${CACHE_VERSION}-${source.mediaKey || source.id}`;
-
-async function queuedSeekDraw(source, t, h) {
-  const entry = pooledEntry(source);
+function queuedCanvas(source, time, height) {
+  const entry = sessionFor(source, height);
   const job = entry.chain.catch(() => {}).then(async () => {
-    const v = await entry.ready;
-    return seekDraw(v, t, h);
+    const sink = await entry.ready;
+    const duration = source.duration || time;
+    const t = Math.max(0, Math.min(time, Math.max(0, duration - 0.001)));
+    const wrapped = await sink.getCanvas(t);
+    if (!wrapped?.canvas) throw new Error('thumbnail frame unavailable');
+    return cloneCanvas(wrapped.canvas);
   });
   entry.chain = job.catch(() => {});
   return job;
 }
 
-// get-or-generate a single frame thumbnail URL
-export function frameUrl(source, frame, fps) {
-  return frameCache.once(cacheKeyOf(source), frame, async () => {
-    const c = await queuedSeekDraw(source, frame / fps, Math.round(THUMB_H * dpr()));
-    return await new Promise(r => c.toBlob(r, 'image/jpeg', 0.72));
-  });
+function coverDraw(sourceCanvas, width, height) {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(width));
+  canvas.height = Math.max(1, Math.round(height));
+  const ctx = canvas.getContext('2d');
+  if (!ctx || !sourceCanvas.width || !sourceCanvas.height) return canvas;
+
+  const scale = Math.max(canvas.width / sourceCanvas.width, canvas.height / sourceCanvas.height);
+  const sw = canvas.width / scale;
+  const sh = canvas.height / scale;
+  const sx = Math.max(0, (sourceCanvas.width - sw) / 2);
+  const sy = Math.max(0, (sourceCanvas.height - sh) / 2);
+  ctx.drawImage(sourceCanvas, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  return canvas;
 }
 
-function cell(url) {
+function once(key, gen) {
+  const cached = lruGet(key);
+  if (cached) return Promise.resolve(cached);
+  if (pending.has(key)) return pending.get(key);
+  const p = gen().then((canvas) => lruPut(key, canvas)).finally(() => pending.delete(key));
+  pending.set(key, p);
+  return p;
+}
+
+export function frameCanvas(source, frame, fps) {
+  const height = Math.round(THUMB_H * dpr());
+  const key = frameKey(source, frame, height);
+  return once(key, () => queuedCanvas(source, frame / fps, height));
+}
+
+function cell() {
   const d = document.createElement('div');
   d.className = 'thumb-cell';
-  const img = document.createElement('img');
-  if (url) img.src = url;
-  d.appendChild(img);
   return d;
 }
-
-// When a single frame is at least this many pixels wide, switch to a
-// frame-aligned filmstrip (exactly one cell per frame, cell edges on frame
-// boundaries) so clip-band edges line up perfectly with the frames they cut.
-const FRAME_CELL_MIN_PX = 22;
 
 // Render thumbnails across [win.start, win.end] into `row`.
 // token = { cancelled } lets callers abort a stale render.
@@ -93,57 +123,50 @@ export async function generateWindow(source, win, row, { fps, token } = {}) {
   fps = fps || source.fps || 30;
   const W = row.clientWidth || window.innerWidth;
   const span = Math.max(0.001, win.end - win.start);
-  const xOf = (t) => (t - win.start) / span * W;     // same mapping as the timeline's timeToX
-  const framePx = W / (span * fps);                  // on-screen width of one frame
+  const xOf = (t) => (t - win.start) / span * W;
+  const framePx = W / (span * fps);
 
   row.innerHTML = '';
-  const cells = [];   // { img, frame }
+  const cells = []; // { el, frame }
 
   if (framePx >= FRAME_CELL_MIN_PX) {
-    // ---- frame-aligned mode (zoomed in) ----
-    // one absolutely-positioned cell per frame; left/width derived from the exact
-    // frame-boundary times, so band edges (snapped to k/fps) sit on cell borders.
     row.style.display = 'block';
     const f0 = Math.floor(win.start * fps);
     const f1 = Math.ceil(win.end * fps);
     for (let f = f0; f < f1; f++) {
       const left = xOf(f / fps);
       const w = xOf((f + 1) / fps) - left;
-      const c = document.createElement('div');
-      c.className = 'thumb-cell';
+      const c = cell();
       c.style.cssText = `position:absolute;left:${left}px;width:${Math.max(1, w)}px;top:0;bottom:0`;
-      const img = document.createElement('img');
-      c.appendChild(img);
       row.appendChild(c);
-      cells.push({ img, frame: f });
+      cells.push({ el: c, frame: f });
     }
   } else {
-    // ---- sampled mode (zoomed out) ----
-    // evenly spaced cells; exact frame alignment isn't perceptible at this zoom.
     row.style.display = 'flex';
     const count = Math.max(6, Math.min(400, Math.round(W / TARGET_SPACING)));
     for (let i = 0; i < count; i++) {
-      const c = cell(null);
+      const c = cell();
       row.appendChild(c);
       const t = win.start + (i / count) * span;
-      cells.push({ img: c.firstChild, frame: Math.round(t * fps) });
+      cells.push({ el: c, frame: Math.round(t * fps) });
     }
   }
 
   for (let i = 0; i < cells.length; i++) {
     if (token?.cancelled) return;
     try {
-      const url = await frameUrl(source, cells[i].frame, fps);
+      const canvas = await frameCanvas(source, cells[i].frame, fps);
       if (token?.cancelled) return;
-      cells[i].img.src = url;
+      cells[i].el.replaceChildren(cloneCanvas(canvas));
     } catch { /* skip */ }
   }
 }
 
-// single thumbnail for cards (data not cached URL — returns object URL via frameCache)
-export async function cardThumb(source, t) {
+export async function cardThumb(source, t, width = 320, height = 180) {
   const fps = source.fps || 30;
-  return frameUrl(source, Math.round(t * fps), fps);
+  const frame = Math.round(t * fps);
+  const key = cardKey(source, frame, width, height);
+  return once(key, async () => coverDraw(await frameCanvas(source, frame, fps), width, height));
 }
 
 export function spacing() { return TARGET_SPACING; }

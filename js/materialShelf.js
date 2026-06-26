@@ -1,11 +1,11 @@
 // materialShelf.js — cutout material cards: select, dbl-click play, drag to output
 import { store } from './store.js';
-import { cardThumb } from './thumbnails.js';
+import { cardThumb, cloneCanvas } from './thumbnails.js';
 import { fmtDur } from './util.js';
 
 let shelfEl, countEl;
 let onPlay = () => {};
-const thumbs = new Map();   // materialId -> objectURL
+const thumbs = new Map();   // materialId -> HTMLCanvasElement
 const thumbSig = new Map(); // materialId -> mid-frame signature the thumb was made for
 const thumbBusy = new Map();// materialId -> bool (generation in flight)
 
@@ -52,13 +52,13 @@ async function ensureThumb(m) {
   thumbBusy.set(m.id, true);
   let ok = false;
   try {
-    const url = await cardThumb(src, (m.in + m.out) / 2);
-    if (url) {
+    const canvas = await cardThumb(src, (m.in + m.out) / 2);
+    if (canvas) {
       ok = true;
-      thumbs.set(m.id, url);
+      thumbs.set(m.id, canvas);
       thumbSig.set(m.id, sig);
-      const img = shelfEl.querySelector(`.card[data-id="${m.id}"] img.thumb`);
-      if (img) img.src = url;
+      const slot = shelfEl.querySelector(`.card[data-id="${m.id}"] .thumb`);
+      if (slot) slot.replaceChildren(cloneCanvas(canvas));
     }
   } catch { /* media not linked / decode failed */ }
   finally {
@@ -79,9 +79,9 @@ function card(m, selected) {
   el.draggable = true;
   el.dataset.id = m.id;
 
-  const img = document.createElement('img');
-  img.className = 'thumb';
-  if (thumbs.has(m.id)) img.src = thumbs.get(m.id);
+  const thumb = document.createElement('div');
+  thumb.className = 'thumb';
+  if (thumbs.has(m.id)) thumb.appendChild(cloneCanvas(thumbs.get(m.id)));
 
   const meta = document.createElement('div');
   meta.className = 'meta';
@@ -91,7 +91,7 @@ function card(m, selected) {
   del.onclick = (e) => { e.stopPropagation(); deleteMaterial(m.id); };
   meta.appendChild(del);
 
-  el.appendChild(img); el.appendChild(meta);
+  el.appendChild(thumb); el.appendChild(meta);
   el.onclick = () => store.select('material', m.id);
   el.ondblclick = () => onPlay(m.in, m.out);
   el.addEventListener('dragstart', (e) => {
