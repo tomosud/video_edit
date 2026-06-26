@@ -1,8 +1,7 @@
 // projectStore.js — project folder I/O (project.json, .gitignore, subtitles/)
 import * as db from './db.js';
 
-const GITIGNORE = `# ViralCut — keep edit data in git, exclude heavy media & caches
-media/
+const GITIGNORE = `# ViralCut — keep edit data in git, exclude generated caches
 cache/
 *.mp4
 *.mov
@@ -46,8 +45,6 @@ export async function newProject() {
   await writeFile(dir, '.gitignore', GITIGNORE);
   // ensure standard subfolders exist
   await dir.getDirectoryHandle('subtitles', { create: true });
-  await dir.getDirectoryHandle('media', { create: true });
-  await dir.getDirectoryHandle('cache', { create: true });
   return dir.name;
 }
 
@@ -101,36 +98,4 @@ export async function getDir(path, { create = false } = {}) {
     catch { return null; }
   }
   return dir;
-}
-
-// Look inside media/ for a file by name (for re-linking)
-export async function findMedia(fileName) {
-  if (!_dirHandle) return null;
-  try {
-    const media = await _dirHandle.getDirectoryHandle('media');
-    const fh = await media.getFileHandle(fileName);
-    return await fh.getFile();
-  } catch { return null; }
-}
-
-// Copy a picked video into the project's gitignored media/ folder via streaming
-// (handles multi-GB files without loading into memory). Returns the on-disk
-// file handle + freshly read File + relative path. If the name already exists
-// with the same size, reuse it instead of recopying.
-export async function copyIntoMedia(file, destName = file.name) {
-  if (!_dirHandle) return null;
-  if (!(await ensurePermission(_dirHandle))) throw new Error('書き込み権限がありません');
-  const media = await _dirHandle.getDirectoryHandle('media', { create: true });
-
-  // reuse an identical existing copy (same name + size) to avoid re-writing
-  try {
-    const existing = await media.getFileHandle(destName);
-    const ef = await existing.getFile();
-    if (ef.size === file.size) return { relPath: 'media/' + destName, handle: existing, file: ef };
-  } catch { /* not present — fall through to copy */ }
-
-  const fh = await media.getFileHandle(destName, { create: true });
-  const w = await fh.createWritable();
-  await file.stream().pipeTo(w);   // streaming copy; pipeTo closes the writable
-  return { relPath: 'media/' + destName, handle: fh, file: await fh.getFile() };
 }

@@ -121,17 +121,17 @@ Mediabunny を npm dependency として使うため、現行の静的 ES modules
 
 `project.version` を上げ、動画ソースの保存形式をコピー前提から handle 前提に移行する。
 
-移行ルール:
+保存ルール:
 
-- 既存 `relPath: media/...` があるプロジェクトは読み込み可能にする。
-- 既存の `media/` コピーが見つかる場合は、移行時だけそのファイルを再リンク候補として扱う。
 - 新規追加では `media/` へコピーしない。
-- `.gitignore` から `media/` と `cache/` 前提を削除、または後方互換用コメントに留める。
+- プロジェクト保存には `relPath` を書かない。
+- `.gitignore` から `media/` 前提を削除する。`cache/` はサムネイルファイルキャッシュ廃止まで一時的に ignore する。
+- 旧プロジェクトの `media/` コピー互換は持たない。
 
 IndexedDB:
 
 - 既存 `handles` store を使うか、`sourceHandles` store を追加する。
-- `media:<sourceId>` ではなく `source:<sourceId>:handle` のような用途が分かる key にする。
+- `source:<sourceId>:handle` のような用途が分かる key にする。
 - handle がない場合は、起動後に「再リンクが必要」状態として UI に出す。
 
 ### 4. MediabunnySourceSession を導入する
@@ -335,7 +335,7 @@ Phase C:
 - `fileOpen` を `mediaRegistry` / `sourceHandles` に分割する。
 - 新規追加時は元 handle と `File` を登録する。
 - プロジェクト保存には `relPath` を書かない。
-- 既存プロジェクトの `relPath` は読み込み互換だけ残す。
+- 旧プロジェクトの `relPath` / `media/` コピー互換は残さない。
 
 完了条件:
 
@@ -430,23 +430,10 @@ Phase C:
 }
 ```
 
-旧 source:
+旧プロジェクト互換:
 
-```json
-{
-  "id": "src_xxxxxxx",
-  "fileName": "input.mp4",
-  "relPath": "media/input.mp4",
-  "duration": 123.456,
-  "fps": 30
-}
-```
-
-移行時:
-
-- `relPath` は保持してもよいが、新規保存時には書かない。
-- `handleKey` がない source は `missing` として扱う。
-- 旧 `media/` 内にファイルが存在する場合だけ、自動再リンク候補にする。
+- 不要。`handleKey` がない source は `missing` として扱い、必要なら手動で再リンクする。
+- 旧 `media/` 内コピーの自動探索は行わない。
 
 ## リスクと対策
 

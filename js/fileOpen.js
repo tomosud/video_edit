@@ -1,12 +1,13 @@
 // fileOpen.js — manage source media: pick files, runtime URL registry, re-link
 import { store, uid } from './store.js';
-import * as projectStore from './projectStore.js';
 import * as db from './db.js';
 import { hashKey } from './util.js';
+import { readMediaInfo } from './mediaInfo.js';
 
 // runtime registry: sourceId -> { file, url, handle }
 const media = new Map();
 let addVideoInFlight = null;
+const handleKeyOf = (sourceId) => 'source:' + sourceId + ':handle';
 
 export function urlFor(sourceId) { return media.get(sourceId)?.url || null; }
 export function fileFor(sourceId) { return media.get(sourceId)?.file || null; }
@@ -86,6 +87,12 @@ async function probeFps(url) {
   });
 }
 
+async function nativeMediaInfo(url) {
+  const duration = await probeDuration(url);
+  const fps = await probeFps(url);
+  return { duration, fps, width: 0, height: 0, hasAudio: false, videoDecodable: false, audioDecodable: false };
+}
+
 function register(sourceId, file, handle = null) {
   const old = media.get(sourceId);
   if (old?.url) URL.revokeObjectURL(old.url);
@@ -115,42 +122,42 @@ async function addVideoImpl() {
   }
 
   const id = uid('src');
-  // stable cache identity from file name + size (survives re-imports / sessions)
-  const mediaKey = await hashKey(`${file.name}:${file.size}`);
+  // stable source identity from file attributes (survives re-imports / sessions)
+  const mediaKey = await hashKey(`${file.name}:${file.size}:${file.lastModified || 0}`);
   const existing = store.get().sources.find(s =>
     s.mediaKey === mediaKey || (s.fileName === file.name && s.size === file.size));
   if (existing) {
+    register(existing.id, file, handle);
+    if (handle) db.saveHandle(handleKeyOf(existing.id), handle).catch(() => {});
     store.setUI({ activeSourceId: existing.id });
     return existing.id;
   }
 
-  // copy into the project's gitignored media/ folder when a project is open,
-  // then point the source at the on-disk copy.
-  let relPath = 'media/' + file.name;
-  if (projectStore.dirHandle()) {
-    try {
-      const copied = await projectStore.copyIntoMedia(file);
-      if (copied) { relPath = copied.relPath; handle = copied.handle; file = copied.file; }
-    } catch (err) {
-      throw new Error('media フォルダへの動画コピーに失敗しました。コピー完了前に同じ動画を追加した場合は、少し待ってからもう一度試してください。\n' + (err?.message || err));
-    }
-  }
-
   const url = register(id, file, handle);
-  const duration = await probeDuration(url);
-  const fps = await probeFps(url);
-  if (handle) db.saveHandle('media:' + id, handle).catch(() => {});
+  let info;
+  try {
+    info = await readMediaInfo(file);
+  } catch (err) {
+    console.warn('Mediabunny metadata probe failed; falling back to native metadata.', err);
+    info = await nativeMediaInfo(url);
+  }
+  if (handle) db.saveHandle(handleKeyOf(id), handle).catch(() => {});
 
   store.update((p, ui) => {
     p.sources.push({
       id,
       fileName: file.name,
-      relPath,
       mediaKey,
       size: file.size,
       lastModified: file.lastModified,
-      duration,
-      fps,
+      duration: info.duration,
+      fps: info.fps,
+      width: info.width,
+      height: info.height,
+      hasAudio: info.hasAudio,
+      videoDecodable: info.videoDecodable,
+      audioDecodable: info.audioDecodable,
+      handleKey: handleKeyOf(id),
       subtitleFile: null,
     });
     ui.activeSourceId = id;
@@ -168,14 +175,13 @@ function pickWithInput() {
   });
 }
 
-// After opening a project, try to re-link sources to media files
+// After opening a project, try to re-link sources from their original file handles.
 export async function relinkAll() {
   const missing = [];
   for (const s of store.get().sources) {
     if (media.has(s.id)) continue;
-    // 1) try stored file handle
     let file = null;
-    const handle = await db.loadHandle('media:' + s.id);
+    const handle = await db.loadHandle(s.handleKey || handleKeyOf(s.id));
     if (handle) {
       try {
         const perm = await handle.queryPermission({ mode: 'read' });
@@ -184,25 +190,69 @@ export async function relinkAll() {
         }
       } catch { /* fall through */ }
     }
-    // 2) try project media/ folder by name
-    if (!file) file = await projectStore.findMedia(s.fileName);
     if (file) register(s.id, file, handle);
     else missing.push(s);
   }
-  // backfill missing fps (older projects) now that media is linked
+  // backfill missing metadata now that media is linked
   for (const s of store.get().sources) {
-    if (s.fps || !media.has(s.id)) continue;
-    const fps = await probeFps(media.get(s.id).url);
-    store.update((p) => { const t = p.sources.find(x => x.id === s.id); if (t) t.fps = fps; }, { commit: false });
+    if ((s.fps && s.duration && s.width != null && s.height != null && s.hasAudio != null) || !media.has(s.id)) continue;
+    let info;
+    try {
+      info = await readMediaInfo(media.get(s.id).file);
+    } catch {
+      info = await nativeMediaInfo(media.get(s.id).url);
+    }
+    store.update((p) => {
+      const t = p.sources.find(x => x.id === s.id);
+      if (t) Object.assign(t, {
+        duration: t.duration || info.duration,
+        fps: t.fps || info.fps,
+        width: t.width ?? info.width,
+        height: t.height ?? info.height,
+        hasAudio: t.hasAudio ?? info.hasAudio,
+        videoDecodable: t.videoDecodable ?? info.videoDecodable,
+        audioDecodable: t.audioDecodable ?? info.audioDecodable,
+        handleKey: t.handleKey || handleKeyOf(s.id),
+      });
+    }, { commit: false });
   }
   return missing; // sources still needing manual re-link
 }
 
 // Manually re-link one source (user picks the file)
 export async function relinkOne(sourceId) {
-  const file = await ('showOpenFilePicker' in window
-    ? window.showOpenFilePicker({ types: [{ description: 'Video', accept: { 'video/*': [] } }] }).then(([h]) => h.getFile())
-    : pickWithInput());
-  if (file) register(sourceId, file);
+  let file, handle = null;
+  if ('showOpenFilePicker' in window) {
+    const [h] = await window.showOpenFilePicker({ types: [{ description: 'Video', accept: { 'video/*': [] } }] });
+    handle = h;
+    file = await h.getFile();
+  } else {
+    file = await pickWithInput();
+  }
+  if (file) {
+    register(sourceId, file, handle);
+    let info = null;
+    try { info = await readMediaInfo(file); } catch { /* metadata stays as-is */ }
+    if (handle) db.saveHandle(handleKeyOf(sourceId), handle).catch(() => {});
+    store.update((p) => {
+      const t = p.sources.find(x => x.id === sourceId);
+      if (!t) return;
+      Object.assign(t, {
+        fileName: file.name,
+        size: file.size,
+        lastModified: file.lastModified,
+        handleKey: handleKeyOf(sourceId),
+      });
+      if (info) Object.assign(t, {
+        duration: info.duration,
+        fps: info.fps,
+        width: info.width,
+        height: info.height,
+        hasAudio: info.hasAudio,
+        videoDecodable: info.videoDecodable,
+        audioDecodable: info.audioDecodable,
+      });
+    }, { commit: false });
+  }
   return !!file;
 }
