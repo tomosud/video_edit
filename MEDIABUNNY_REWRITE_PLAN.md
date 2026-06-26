@@ -367,7 +367,22 @@ Phase C:
 - タイムラインスクロール/ズーム中にサムネイル生成が詰まらない。
 - 再生・シーク操作がサムネイル生成より優先される。
 
-### Phase 4: プレビューの Mediabunny 化
+### Phase 4: 下段毎フレームタイムライン
+
+- 現行のソースタイムライン直下に `frameStrip` canvas を追加する。
+- RamPlayer の `stepStripFrames()` / `renderFilmstrip()` を参考に、現フレーム中心の前後 10 フレーム表示を実装する。
+- `stepFrameCache` を追加し、現在位置付近の exact frame をメモリに保持する。
+- 一時停止/シーク停止中は前後フレームを先読みし、再生中は生成を抑制する。
+- 下段クリック、ホイール、左右キー操作をフレーム単位 seek/step に接続する。
+
+完了条件:
+
+- 上段タイムラインのズーム状態と独立して、下段に現フレーム近傍の毎フレームが表示される。
+- 中央スロットが現在フレームと一致する。
+- 下段からフレーム単位で seek/step できる。
+- IN/OUT 境界や素材端が下段のフレーム表示で確認できる。
+
+### Phase 5: プレビューの Mediabunny 化
 
 - RamPlayer の `Player` を編集アプリ用に分解する。
 - source preview を canvas 再生へ置き換える。
@@ -378,7 +393,7 @@ Phase C:
 - `<video>` なしでソースプレビュー、素材範囲再生、出力シーケンス再生ができる。
 - 大きな動画でもメモリ上限内でシーク/停止/再生できる。
 
-### Phase 5: 書き出し刷新
+### Phase 6: 書き出し刷新
 
 - 元 handle から取得した `File` を export に渡す。
 - `<video>` 再生、`canvas.captureStream()`、`MediaRecorder` に依存した export 経路を廃止する。
@@ -443,6 +458,8 @@ Phase C:
   - 対策: 用途ごとの poolSize を小さくし、LRU を件数/推定 bytes で制御する。
 - タイムライン exact thumbnail が重い。
   - 対策: keyframe を先に表示し、アイドル時だけ exact に差し替える。
+- 下段毎フレームタイムラインは exact frame を多く保持しがち。
+  - 対策: RamPlayer と同様に表示半径を制限し、再生中/一時停止中でキャッシュ予算を分ける。
 - 既存 `<video>` 前提の UI が多い。
   - 対策: Phase A では `<video>` を残し、Mediabunny 化をサムネイル/メタデータから始める。
 - 書き出しはクロップ/テキスト/音声で複雑。
@@ -459,6 +476,9 @@ Phase C:
 - 権限がない場合に再リンク導線が出る。
 - `cache/frames` が作成されない。
 - タイムラインのズーム/パン/素材選択でサムネイルが破綻しない。
+- 上段タイムラインのズーム/パンに関係なく、下段に現在フレーム付近の毎フレームが表示される。
+- 下段中央のフレームがプレビューの現在フレームと一致する。
+- 下段クリック/ホイール/キー操作でフレーム単位に移動できる。
 - 再生中にサムネイル生成が UI を固めない。
 - 素材範囲、出力シーケンス、クロッププレビューの表示が現行と一致する。
 - 書き出しが `<video>` 再生なしで完了する。
@@ -476,5 +496,6 @@ Phase C:
 4. Mediabunny でメタデータ取得だけを先に置き換える。
 5. `frameCache.js` のファイル保存を止め、メモリ LRU のみにする。
 6. `CanvasSink` ベースのサムネイル生成を導入し、既存タイムラインに接続する。
-7. 単一素材 trim export を Mediabunny packet copy / `Conversion` で実装し、`MediaRecorder` 経路から切り離す。
-8. 複数素材 export 用に `CanvasSource` ベースの合成エンジンを設計・実装する。
+7. ソースタイムライン下に `frameStrip` canvas を追加し、現フレーム付近の毎フレーム表示を実装する。
+8. 単一素材 trim export を Mediabunny packet copy / `Conversion` で実装し、`MediaRecorder` 経路から切り離す。
+9. 複数素材 export 用に `CanvasSource` ベースの合成エンジンを設計・実装する。
