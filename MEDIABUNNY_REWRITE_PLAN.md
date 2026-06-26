@@ -12,13 +12,17 @@
 - 読み込みはユーザーが選択した元ファイルを `FileSystemFileHandle` から再取得し、Mediabunny の `BlobSource(File)` に渡す。
 - サムネイルを `cache/frames/...jpg` としてファイル保存しない。
 - サムネイルは Mediabunny の `CanvasSink` / `EncodedPacketSink` で高速に生成し、`HTMLCanvasElement` をメモリ上の LRU キャッシュで管理する。
+- 動画書き出しは `<video>` の実時間再生や `MediaRecorder` に頼らず、Mediabunny の `Conversion` / `Output` / `CanvasSource` / packet copy を主経路にする。
+- 現状のソースタイムラインの下に、現フレーム付近を毎フレームで見せる固定スケールの下段タイムラインを追加する。
 - 既存の素材棚、ソースタイムライン、出力シーケンス、クロップ編集は維持しつつ、動画 I/O とプレビュー処理を刷新する。
 
 ## 参照した情報
 
 - `C:\work\script\RamPlayer_web`
   - `src/player/Player.ts`: Mediabunny `Input`, `BlobSource`, `CanvasSink`, `AudioBufferSink`, `EncodedPacketSink` による再生、シーク、サムネイル生成。
+  - `src/player/Player.ts`: `stepFrames`, `scheduleStepPrefetch()`, `stepStripFrames()` による現フレーム周辺の毎フレームキャッシュ。
   - `src/main.ts`: タイムラインサムネイルのメモリ LRU、生成キュー、再生/シーク中の生成停止。
+  - `src/main.ts`: `renderFilmstrip()` による 21 スロットの毎フレーム filmstrip 描画。
   - `src/persist/restore.ts`: `FileSystemFileHandle` を IndexedDB に保存し、権限確認後に `getFile()` で元ファイルを再取得。
   - `src/export/clipExport.ts`: Mediabunny `Conversion` と packet copy による MP4 書き出し。
 - Mediabunny 公式リポジトリ: https://github.com/Vanilagy/mediabunny
@@ -59,6 +63,8 @@
 - 再生、サムネイル、書き出しで別々のデコード経路になっている。
 - フレーム精度と GOP/キーフレーム扱いが分散している。
 - 書き出し品質と対応形式が MediaRecorder/ブラウザ実装に強く依存する。
+- 書き出し速度が「再生できる速度」に縛られ、バックグラウンド/タブ非アクティブ時の挙動も不安定になりやすい。
+- `MediaRecorder` は狙った bitrate、frame rate、keyframe、MP4 構造を細かく制御しづらい。
 
 ## 設計方針
 
@@ -178,13 +184,71 @@ RamPlayer から取り込む挙動:
 
 現在の `sourceTimeline.js` は DOM の `thumbRow` と clip band を組み合わせている。サムネイル刷新に合わせ、少なくともサムネイル行は canvas 描画に変える。
 
+タイムラインは 2 段構成にする。
+
+- 上段: 現状のソースタイムライン。表示範囲をズーム/パンでき、素材範囲、clip band、playhead、overview を扱う。
+- 下段: 現フレーム付近の毎フレームタイムライン。ズーム状態に左右されず、常に現在フレームを中心に前後の実フレームを並べる。
+
 段階案:
 
 1. 既存 DOM タイムラインを維持し、`thumb-cell img` の代わりに canvas から `toDataURL` せず直接描画する overlay canvas を追加。
 2. 動作が安定したら clip band、overview、playhead も canvas へ統合する。
 3. フレーム単位ズーム時の境界合わせは現在の `FRAME_CELL_MIN_PX` 相当のロジックを canvas 上で再実装する。
 
-### 7. プレビュー再生を段階的に Mediabunny 化する
+### 7. 下段の毎フレームタイムラインを追加する
+
+`RamPlayer_web` の filmstrip 実装を参考に、ソースタイムライン直下へ「現フレーム近傍の毎フレーム表示」を追加する。
+
+目的:
+
+- 上段タイムラインを広域表示やズーム操作に使いつつ、下段では常に現在位置の前後フレームを確認できるようにする。
+- IN/OUT や素材境界をフレーム単位で確認しやすくする。
+- ズームしなくても、現在フレーム、前後フレーム、キャッシュ済みフレームの状態が見えるようにする。
+
+UI 仕様:
+
+- 上段タイムラインの下に `frameStrip` 用 canvas を追加する。
+- 表示は奇数スロット構成にし、中央スロットを現在フレームにする。初期値は RamPlayer と同じく前後 10 フレーム、合計 21 スロットを基準にする。
+- 各スロットには実フレームのサムネイル、フレーム番号、必要なら時刻を描く。
+- 中央フレームは強調枠、IN/OUT 範囲外は暗く、素材範囲や選択範囲は薄い overlay で示す。
+- 下段は上段のズーム倍率に追従しない。現在フレームが変わるたびに中心を更新する。
+- 下段クリックで該当フレームへ seek、ドラッグ/ホイールはフレーム単位 step に割り当てる。
+
+データ/キャッシュ仕様:
+
+- `RamPlayer_web` の `StepFrame` 相当を導入する。
+  - `time`
+  - `duration`
+  - `frameIndex`
+  - `canvas`
+- 現在フレームの前後を `CanvasSink.getCanvas()` または連続 iterator で先読みする。
+- `stepFrames` / `stepKeys` のように frame timestamp を key にしたメモリキャッシュを持つ。
+- 再生中は下段キャッシュを最小限にし、一時停止/シーク停止中は前後フレームを厚めに先読みする。
+- メモリ上限は通常サムネイル LRU とは分け、プレビュー用フレームキャッシュとして管理する。
+
+Mediabunny 連携:
+
+- 現在フレームの描画と下段 filmstrip は同じ `MediabunnySourceSession` からフレームを取得する。
+- `CanvasSink` の exact frame 取得を基本にし、連続フレームが必要な場合は iterator でまとめて読む。
+- 取得した canvas は `HTMLCanvasElement` として保持し、object URL や jpg blob には変換しない。
+- 新しい seek が入ったら generation id で古い先読みを破棄する。
+
+実装候補:
+
+- `src/timeline/sourceTimeline.ts`: 上段タイムライン。
+- `src/timeline/frameStrip.ts`: 下段毎フレーム timeline の描画と pointer 操作。
+- `src/media/stepFrameCache.ts`: 現フレーム付近の exact frame cache。
+- `src/media/sourceSession.ts`: `CanvasSink` / iterator を提供。
+
+完了条件:
+
+- 上段タイムラインをズーム/パンしても、下段は現フレーム周辺の毎フレーム表示を維持する。
+- 中央スロットが現在フレームと一致する。
+- 左右フレームをクリックしてフレーム単位で移動できる。
+- IN/OUT 境界付近で、下段表示から境界フレームを確認できる。
+- 下段の生成が上段サムネイルや再生操作をブロックしない。
+
+### 8. プレビュー再生を段階的に Mediabunny 化する
 
 全面移行の最終形は、`<video id="srcVideo">` 依存を減らし、Mediabunny + canvas player に寄せる。
 
@@ -208,30 +272,48 @@ Phase C:
 - 出力シーケンス再生を複数 source session の切り替えで実装する。
 - `<video>` は fallback または削除。
 
-### 8. 書き出しを Mediabunny 中心へ再設計する
+### 9. 書き出しを Mediabunny 主経路へ再設計する
 
-現在の `export.js` は `<video>` + `MediaRecorder` が中心。Mediabunny へ寄せる場合は 2 系統を用意する。
+現在の `export.js` は `<video>` を実時間再生し、その映像を canvas に描き、`canvas.captureStream()` + `MediaRecorder` で録画している。この方式は廃止対象にする。最終形では、プレビュー再生とは独立した deterministic な export pipeline を作り、Mediabunny に読み込み、デコード、エンコード、mux を任せる。
+
+基本方針:
+
+- export は `<video>.play()` を呼ばない。
+- export は `MediaRecorder` を主経路にしない。
+- 入力は元 handle から再取得した `File` を `BlobSource` で開く。
+- 出力は `Output` + `Mp4OutputFormat` + `BufferTarget` を基本にする。
+- 単純 trim は packet copy を優先し、必要な場合だけ reencode する。
+- クロップ、テキスト、複数素材連結がある場合は、Mediabunny で各素材を decode し、合成 canvas を `CanvasSource` から encode する。
 
 短期:
 
-- 既存 export は `freshFileFor()` の移行に合わせて、元 handle から取得した `File` を使うようにする。
+- `freshFileFor()` を元 handle 再取得ベースに変更し、export にコピーではなく元 `File` を渡す。
 - `media/` コピー前提をなくす。
+- 単一素材かつクロップ/テキストなしの trim export に、RamPlayer の `export/clipExport.ts` 相当を移植する。
+- GOP 境界に合う範囲は `EncodedPacketSink` + `EncodedVideoPacketSource` / `EncodedAudioPacketSource` による packet copy を使う。
+- GOP 境界に合わない範囲は `Conversion` で reencode する。
 
 中期:
 
-- RamPlayer の `export/clipExport.ts` をベースに、単一素材の MP4 trim/export を Mediabunny `Conversion` で実装する。
-- GOP が合う場合は packet copy、合わない場合は reencode を選ぶ。
+- 複数素材のシーケンスを Mediabunny export graph に載せる。
+- 各素材は `CanvasSink` / `VideoSampleSink` で必要時刻のフレームを取得する。
+- 出力サイズの canvas にクロップ、パン、ズーム、背景ぼかし、テキスト overlay を描画する。
+- 描画済み canvas を `CanvasSource` で H.264/MP4 へ投入する。
+- 音声は `AudioBufferSink` で取り出し、クリップ範囲に合わせて `AudioBufferSource` へ投入する。
 
 長期:
 
-- 複数素材 + クロップ + テキスト overlay + 9:16 出力を Mediabunny `Output` + `CanvasSource` + audio mixing で作る。
-- ffmpeg.wasm fallback は縮小または廃止する。
+- BGM、複数音声、音量調整、フェードを AudioBuffer ベースで mix する。
+- 進捗、キャンセル、エラー復旧を export pipeline 内で管理する。
+- ffmpeg.wasm fallback は原則廃止し、必要な codec fallback だけ明示的に残す。
 
 注意:
 
-- 現行のクロップ/overlay 合成は canvas で必要。
-- 音声の複数クリップ連結と BGM 対応は別途設計が必要。
+- 現行のクロップ/overlay 合成は canvas で再実装する必要がある。
+- `CanvasSource` は合成済みフレームのエンコードに使い、素材の読み込みは `CanvasSink` / `VideoSampleSink` 側で行う。
+- 音声の複数クリップ連結と BGM 対応は、映像 export とは分けて設計する。
 - packet copy はクロップ/テキスト合成とは両立しないため、無変換 trim 用の最適化として扱う。
+- `MediaRecorder` は検証用または緊急 fallback に限定し、通常の書き出し経路から外す。
 
 ## 実装フェーズ
 
@@ -299,15 +381,19 @@ Phase C:
 ### Phase 5: 書き出し刷新
 
 - 元 handle から取得した `File` を export に渡す。
-- 単一クリップ trim は Mediabunny の packet copy / reencode を導入する。
-- 複数素材 + クロップ出力は `Output` + canvas 合成で再実装する。
-- ffmpeg.wasm は必要な fallback のみに残す。
+- `<video>` 再生、`canvas.captureStream()`、`MediaRecorder` に依存した export 経路を廃止する。
+- 単一クリップ trim は Mediabunny の packet copy / `Conversion` reencode を導入する。
+- 複数素材 + クロップ + テキスト出力は `Output` + `CanvasSource` + canvas 合成で再実装する。
+- 音声は `AudioBufferSink` / `AudioBufferSource` を使い、クリップ範囲に合わせて連結する。
+- ffmpeg.wasm は必要な fallback のみに残すか、削除する。
 
 完了条件:
 
 - コピーなしの元ファイルから書き出せる。
 - 既存の 9:16 crop 出力と見た目が一致する。
 - 長尺/大容量でも wasm メモリに全投入しない。
+- export が実時間再生速度に縛られない。
+- タブの表示状態や `<video>` の再生可否に export 結果が依存しない。
 
 ## データ移行方針
 
@@ -360,7 +446,11 @@ Phase C:
 - 既存 `<video>` 前提の UI が多い。
   - 対策: Phase A では `<video>` を残し、Mediabunny 化をサムネイル/メタデータから始める。
 - 書き出しはクロップ/テキスト/音声で複雑。
-  - 対策: 元ファイル読み込み対応を先に行い、書き出しエンジン刷新は独立フェーズにする。
+  - 対策: 単一素材 trim の packet copy / reencode を先に入れ、その後に canvas 合成 export と音声連結を段階実装する。
+- `CanvasSource` export はフレーム生成タイミングをこちらで管理する必要がある。
+  - 対策: 出力 fps から timestamp を固定計算し、1 frame ずつ合成して投入する。再生クロックや rAF は使わない。
+- 音声 mix は映像合成より失敗しやすい。
+  - 対策: 最初は素材音声の直列連結だけを実装し、BGM/mix/fade は別段階にする。
 
 ## 検証項目
 
@@ -371,6 +461,10 @@ Phase C:
 - タイムラインのズーム/パン/素材選択でサムネイルが破綻しない。
 - 再生中にサムネイル生成が UI を固めない。
 - 素材範囲、出力シーケンス、クロッププレビューの表示が現行と一致する。
+- 書き出しが `<video>` 再生なしで完了する。
+- 書き出し結果の長さ、fps、解像度、音声有無がプロジェクト設定と一致する。
+- 単一素材 trim で packet copy 可能なケースと reencode ケースの両方を確認する。
+- 複数素材 + クロップ + テキスト overlay の export 結果がプレビューと一致する。
 - 4K/長尺/可変 fps/音声なし/回転 metadata 付き動画で挙動を確認する。
 - build が通る。
 
@@ -382,3 +476,5 @@ Phase C:
 4. Mediabunny でメタデータ取得だけを先に置き換える。
 5. `frameCache.js` のファイル保存を止め、メモリ LRU のみにする。
 6. `CanvasSink` ベースのサムネイル生成を導入し、既存タイムラインに接続する。
+7. 単一素材 trim export を Mediabunny packet copy / `Conversion` で実装し、`MediaRecorder` 経路から切り離す。
+8. 複数素材 export 用に `CanvasSource` ベースの合成エンジンを設計・実装する。
