@@ -1,4 +1,4 @@
-// db.js — IndexedDB wrapper: autosave, handles, history, model/thumb cache
+// db.js - IndexedDB wrapper: autosave, handles, history, model/thumb cache
 const DB_NAME = 'viralcut';
 const DB_VERSION = 1;
 const STORES = ['autosave', 'handles', 'history', 'models', 'thumbs'];

@@ -1,4 +1,4 @@
-// util.js — small shared helpers
+// util.js - small shared helpers
 export function fmtTime(sec) {
   sec = Math.max(0, sec || 0);
   const m = Math.floor(sec / 60);

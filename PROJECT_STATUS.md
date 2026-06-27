@@ -40,6 +40,57 @@ The central store is [js/store.js](js/store.js). Selection is a single `{ kind, 
 - [js/export.js](js/export.js): deterministic frame export through Mediabunny `Output`, `CanvasSource`, and `AudioSampleSource`.
 - [js/util.js](js/util.js): shared helpers for formatting, hashing, scrubbing, and frame/time conversion.
 
+## UI Design
+
+The UI is organized into three focusable work areas:
+
+- `1 Timeline`: source overview, zoomed source timeline, and per-frame timeline.
+- `2 Materials`: cutout material shelf, source preview, and 9:16 crop preview.
+- `3 Edit`: output sequence and sequence playback controls.
+
+Clicking inside an area makes it the active shortcut target. The active area is shown with a subtle border. Current shortcut behavior:
+
+- Timeline or Materials area: `Space` toggles the source preview.
+- Edit area: `Space` pauses/resumes the output sequence, or starts from the beginning if no sequence is active.
+- `Delete` / `Backspace` deletes the current selection after confirmation.
+
+Timeline behavior:
+
+- The overview/minimap is always full-source and is displayed above the zoomed source timeline.
+- The zoomed source timeline and the per-frame timeline both support material selection and edit entry.
+- Single-click seeks the preview/playhead to that point.
+- Double-clicking a point covered by existing materials enters material edit mode instead of creating a new material.
+- If multiple materials overlap at the double-clicked point, all overlapping materials enter edit mode.
+- Only materials in edit mode can be moved or resized.
+- When sliding overlapping editable materials, the shortest material under the pointer has priority.
+- Double-clicking empty timeline space exits edit mode if a material is being edited.
+- Double-clicking empty timeline space creates a new material if no material is being edited, then enters edit mode for it.
+
+This resolves the original ambiguity between "double-click empty space creates a material" and "double-click empty space exits edit mode" by making edit exit take priority when already editing.
+
+Materials and preview behavior:
+
+- Source preview controls are hidden because source range playback is always looped.
+- The material shelf uses smaller cards for larger clip counts.
+- Material thumbnails do not show delete buttons; deletion is only through `Delete` / `Backspace` with confirmation.
+- Material thumbnail wheel changes card size.
+- Double-clicking material title text edits it inline. Double-clicking elsewhere on the card plays the material.
+- The 9:16 crop preview fits within its column without reserving a wide blank side area.
+- Source preview crop and vertical preview crop have independent edit modes and independent saved settings.
+- Double-clicking either preview toggles its crop edit mode.
+- Crop sliders appear only while that preview is in crop edit mode, with a reset button.
+- In normal mode, hover shows `Double-click to edit crop`.
+
+Edit area behavior:
+
+- `Play From Start` always starts the output sequence from the first output clip.
+- The pause button toggles between `Pause` and `Resume`.
+- Double-clicking an output clip plays continuously from that clicked clip to the end of the sequence.
+
+Text policy:
+
+- UI labels, status messages, prompts, error messages, and code comments should be English-only unless a specific future feature explicitly requires localized copy.
+
 ## Frame Model
 
 The intended editing model is frame based:

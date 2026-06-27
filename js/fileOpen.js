@@ -1,4 +1,4 @@
-// fileOpen.js — manage source media: pick files, runtime URL registry, re-link
+// fileOpen.js - manage source media: pick files, runtime URL registry, re-link
 import { store, uid } from './store.js?v=20260627-nativepreview3';
 import * as db from './db.js?v=20260627-nativepreview3';
 import * as projectStore from './projectStore.js?v=20260627-nativepreview3';

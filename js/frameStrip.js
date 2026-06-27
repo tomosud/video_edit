@@ -1,5 +1,5 @@
 // frameStrip.js - fixed per-frame strip around the current preview frame
-import { store } from './store.js?v=20260627-nativepreview3';
+import { store, uid } from './store.js?v=20260627-nativepreview3';
 import { frameCanvas } from './thumbnails.js?v=20260627-nativepreview3';
 import { frameFromTime, frameStartTime, seekVideoFrame } from './util.js?v=20260627-nativepreview3';
 
@@ -22,6 +22,7 @@ export function init(canvasEl, videoEl) {
   video = videoEl;
 
   canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('dblclick', onDoubleClick);
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
   canvas.addEventListener('wheel', onWheel, { passive: false });
@@ -106,6 +107,17 @@ function selectedMaterialId() {
   return o ? o.materialId : null;
 }
 
+function editingIds() {
+  const ids = Array.isArray(store.ui.editMaterialIds) ? store.ui.editMaterialIds : [];
+  if (ids.length) return new Set(ids);
+  return store.ui.editMaterialId ? new Set([store.ui.editMaterialId]) : new Set();
+}
+
+function setEditingMaterials(ids) {
+  const unique = [...new Set(ids.filter(Boolean))];
+  store.setUI({ editMaterialIds: unique, editMaterialId: unique[0] || null });
+}
+
 function frameAtClientX(clientX, state) {
   const rect = canvas.getBoundingClientRect();
   const slot = clamp(Math.floor((clientX - rect.left) / Math.max(1, rect.width) * SLOT_COUNT), 0, SLOT_COUNT - 1);
@@ -171,6 +183,7 @@ function drawMaterialBands(state, slotW, h) {
   const lastFrame = state.currentFrame + RADIUS;
   const mats = store.get().materials.filter(m => m.sourceId === state.source.id);
   const selectedId = selectedMaterialId();
+  const editSet = editingIds();
 
   for (const m of mats) {
     const { inFrame, outFrame } = materialFrames(m, state);
@@ -181,23 +194,24 @@ function drawMaterialBands(state, slotW, h) {
     const x = (leftFrame - firstFrame) * slotW;
     const w = Math.max(2, (rightFrame - leftFrame) * slotW);
     const selected = m.id === selectedId;
+    const editing = editSet.has(m.id);
 
     ctx.save();
-    ctx.fillStyle = selected ? 'rgba(255, 182, 72, 0.14)' : 'rgba(76, 139, 245, 0.12)';
-    ctx.strokeStyle = selected ? '#ffb648' : '#4c8bf5';
-    ctx.lineWidth = selected ? 2 : 1;
+    ctx.fillStyle = editing ? 'rgba(255, 210, 138, 0.24)' : (selected ? 'rgba(255, 182, 72, 0.14)' : 'rgba(76, 139, 245, 0.12)');
+    ctx.strokeStyle = editing ? '#ffd28a' : (selected ? '#ffb648' : '#4c8bf5');
+    ctx.lineWidth = editing || selected ? 2 : 1;
     ctx.fillRect(x + 1, 2, Math.max(1, w - 2), h - 4);
     ctx.strokeRect(x + 0.5, 1.5, Math.max(1, w - 1), h - 3);
 
     const handleW = Math.min(7, Math.max(3, slotW * 0.18));
-    if (inFrame >= firstFrame && inFrame <= lastFrame) {
+    if (editing && inFrame >= firstFrame && inFrame <= lastFrame) {
       const hx = (inFrame - firstFrame) * slotW;
-      ctx.fillStyle = selected ? '#ffb648' : '#4c8bf5';
+      ctx.fillStyle = '#ffd28a';
       ctx.fillRect(hx, 2, handleW, h - 4);
     }
-    if (outFrame - 1 >= firstFrame && outFrame - 1 <= lastFrame) {
+    if (editing && outFrame - 1 >= firstFrame && outFrame - 1 <= lastFrame) {
       const hx = (outFrame - firstFrame) * slotW - handleW;
-      ctx.fillStyle = selected ? '#ffb648' : '#4c8bf5';
+      ctx.fillStyle = '#ffd28a';
       ctx.fillRect(hx, 2, handleW, h - 4);
     }
     ctx.restore();
@@ -275,29 +289,33 @@ function seekFrame(frame) {
   scheduleRender();
 }
 
-function hitMaterial(frame, state) {
+function hitMaterials(frame, state) {
   const mats = store.get().materials.filter(m => m.sourceId === state.source.id);
-  const selectedId = selectedMaterialId();
-  const ordered = [...mats].sort((a, b) => (a.id === selectedId ? 1 : 0) - (b.id === selectedId ? 1 : 0));
-  for (let i = ordered.length - 1; i >= 0; i--) {
-    const m = ordered[i];
+  const hits = [];
+  for (const m of mats) {
     const { inFrame, outFrame } = materialFrames(m, state);
     if (frame < inFrame || frame >= outFrame) continue;
     const edge = frame === inFrame ? 'in' : (frame === outFrame - 1 ? 'out' : null);
-    return { material: m, inFrame, outFrame, edge };
+    hits.push({ material: m, inFrame, outFrame, edge, length: outFrame - inFrame });
   }
-  return null;
+  return hits.sort((a, b) => a.length - b.length);
 }
 
 function onPointerDown(e) {
   const state = activeState();
   if (!state || e.button !== 0) return;
   const frame = frameAtClientX(e.clientX, state);
-  const hit = hitMaterial(frame, state);
-  if (hit) {
+  const hits = hitMaterials(frame, state);
+  if (hits.length) {
+    const hit = hits[0];
     e.preventDefault();
     store.ui._fromTimeline = true;
     store.select('material', hit.material.id);
+    seekFrame(hit.edge === 'out' ? hit.outFrame - 1 : frame);
+    if (!editingIds().has(hit.material.id)) {
+      gesture = null;
+      return;
+    }
     const length = hit.outFrame - hit.inFrame;
     const edge = hit.edge;
     gesture = {
@@ -309,11 +327,46 @@ function onPointerDown(e) {
       length,
     };
     try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
-    seekFrame(edge === 'out' ? hit.outFrame - 1 : frame);
     return;
   }
   gesture = { type: 'seek' };
+  store.select(null, null);
   seekFrame(frame);
+}
+
+function onDoubleClick(e) {
+  const state = activeState();
+  if (!state) return;
+  const frame = clamp(frameAtClientX(e.clientX, state), 0, Math.max(0, state.totalFrames - 1));
+  const hits = hitMaterials(frame, state);
+  if (hits.length) {
+    const hit = hits[0];
+    store.ui._fromTimeline = true;
+    store.select('material', hit.material.id);
+    setEditingMaterials(hits.map(h => h.material.id));
+    seekFrame(hit.edge === 'out' ? hit.outFrame - 1 : frame);
+    return;
+  }
+  if (editingIds().size) {
+    setEditingMaterials([]);
+    seekFrame(frame);
+    return;
+  }
+
+  const id = uid('mat');
+  const inFrame = frame;
+  const outFrame = Math.min(state.totalFrames, inFrame + Math.max(1, Math.round(state.fps / 4)));
+  store.update((p, ui) => p.materials.push({
+    id,
+    sourceId: state.source.id,
+    in: frameToTime(inFrame, state),
+    out: frameToTime(outFrame, state),
+    crop: { ...(ui.crop || { panX: .5, panY: .5, zoom: 1 }) },
+  }));
+  store.ui._fromTimeline = true;
+  store.select('material', id);
+  setEditingMaterials([id]);
+  seekFrame(inFrame);
 }
 
 function onPointerMove(e) {

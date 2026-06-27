@@ -13,13 +13,15 @@ import { fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } 
 const $ = (id) => document.getElementById(id);
 const el = {};
 ['btnNewProject','btnOpenProject','btnAddVideo','sourceSelect','btnRelinkMissing','btnUndo','btnRedo',
- 'btnExport','status','srcVideo','srcEmpty','origTime','btnPlay','btnLoop','vertCanvas',
- 'panX','panY','zoom','bgBlur','overlay','overlayMsg','overlayProg',
+ 'btnExport','status','srcVideo','srcEmpty','origPane','origTime','btnPlay','btnLoop','vertPane','vertCanvas',
+ 'panX','panY','zoom','bgBlur','verticalCropReset',
+ 'sourcePanX','sourcePanY','sourceZoom','sourceCropReset',
+ 'overlay','overlayMsg','overlayProg',
  'confirm','confirmTitle','confirmMsg','confirmOk','confirmCancel',
  'tlScroll','tlInner','thumbRow','clipBands','tlPlayhead','frameStrip','srcRange',
- 'tlOverview','ovClips','ovWindow','ovPlayhead',
+ 'tlOverview','ovThumbRow','ovClips','ovWindow','ovPlayhead',
  'seekBar','seekMarks','seekRange','seekFill','seekHead','frameInfo',
- 'shelf','shelfCount','outList','totalDur','btnPlayOut','btnStopOut'].forEach(id => el[id] = $(id));
+ 'workPane','shelf','shelfCount','outList','totalDur','btnPlayOut','btnStopOut'].forEach(id => el[id] = $(id));
 
 let projectOpen = false;
 let activeUrl = null;
@@ -31,20 +33,21 @@ let transportRaf = 0;
 let projectSaveTimer = 0;
 let sequenceAdvancing = false;
 let missingSources = [];
+let activeArea = 'timeline';
 
 function init() {
   cropPreview.init(el.vertCanvas, el.srcVideo);
   srcTimeline.init({
     scroll: el.tlScroll, inner: el.tlInner, thumbRow: el.thumbRow,
     bands: el.clipBands, playhead: el.tlPlayhead, range: el.srcRange,
-    overview: el.tlOverview, ovClips: el.ovClips, ovWindow: el.ovWindow, ovPlayhead: el.ovPlayhead,
+    overview: el.tlOverview, ovThumbRow: el.ovThumbRow, ovClips: el.ovClips, ovWindow: el.ovWindow, ovPlayhead: el.ovPlayhead,
   }, el.srcVideo);
   frameStrip.init(el.frameStrip, el.srcVideo);
   shelf.init({ shelf: el.shelf, count: el.shelfCount }, { play: playRange });
-  outSeq.init({ list: el.outList, total: el.totalDur }, { play: playRange });
+  outSeq.init({ list: el.outList, total: el.totalDur }, { play: playOutputFrom });
   srcTimeline.onPlayRange(playRange);
 
-  wireMenu(); wireTransport(); wireCrop(); wireShortcuts(); wireSeek(); wireConfirm();
+  wireMenu(); wireTransport(); wireCrop(); wireShortcuts(); wireSeek(); wireConfirm(); wireAreas(); wireWorkspaceSplitters();
   store.subscribe(onState);
 
   bootstrap();
@@ -75,7 +78,7 @@ function wireMenu() {
     projectOpen = true; store.load({ name });
     setMissingSources([]);
     updateChrome();
-    setStatus('新規プロジェクト: ' + name);
+    setStatus('New project: ' + name);
   });
   el.btnOpenProject.onclick = guard(async () => {
     const { name, project } = await projectStore.openProject();
@@ -86,8 +89,8 @@ function wireMenu() {
       const missing = await fileOpen.relinkAll({ requestPermission: true });
       setMissingSources(missing);
       refreshStateViews();
-      setStatus(missing.length ? name + ' 未リンク: ' + missing.length : '開いた: ' + name);
-    } else { store.load({ name }); setMissingSources([]); updateChrome(); setStatus('空フォルダを新規プロジェクトとして開きました: ' + name); }
+      setStatus(missing.length ? name + ' missing links: ' + missing.length : 'Opened: ' + name);
+    } else { store.load({ name }); setMissingSources([]); updateChrome(); setStatus('Opened empty folder as a new project: ' + name); }
   });
   el.btnAddVideo.onclick = guard(async () => {
     el.btnAddVideo.disabled = true;
@@ -103,8 +106,8 @@ function wireMenu() {
     setMissingSources(missing);
     refreshStateViews();
     setStatus(missing.length
-      ? 'まだ復元できない動画があります: ' + missing.length
-      : '動画アクセスを復元しました');
+      ? 'Some videos could not be restored: ' + missing.length
+      : 'Video access restored');
   });
   el.btnUndo.onclick = () => store.undo();
   el.btnRedo.onclick = () => store.redo();
@@ -125,13 +128,15 @@ function wireTransport() {
   el.srcVideo.addEventListener('play', startTransportMonitor);
   el.srcVideo.addEventListener('pause', stopTransportMonitor);
   el.srcVideo.addEventListener('ended', stopTransportMonitor);
+  el.srcVideo.addEventListener('play', updateOutputTransport);
+  el.srcVideo.addEventListener('pause', updateOutputTransport);
   el.srcVideo.addEventListener('timeupdate', () => {
     el.origTime.textContent = fmtTime(el.srcVideo.currentTime) + ' / ' + fmtTime(el.srcVideo.duration);
   });
   el.btnLoop.style.color = 'var(--accent)';
 
   el.btnPlayOut.onclick = playOutputs;
-  el.btnStopOut.onclick = stopSequence;
+  el.btnStopOut.onclick = toggleOutputPause;
 }
 
 function playRange(a, b) {
@@ -218,6 +223,16 @@ function transportLoop() {
 
 // ---- sequential playback of the output sequence ----
 function playOutputs() {
+  playOutputsFromIndex(0);
+}
+
+function playOutputFrom(outputId) {
+  const p = store.get();
+  const index = p.outputs.findIndex(o => o.id === outputId);
+  playOutputsFromIndex(Math.max(0, index));
+}
+
+function playOutputsFromIndex(startIndex) {
   const p = store.get();
   const items = p.outputs.map(o => {
     const m = store.getMaterial(o.materialId);
@@ -231,13 +246,14 @@ function playOutputs() {
   }).filter(Boolean);
   if (!items.length) return;
   store.ui.playRange = null;
-  sequence = { items, i: 0, mode: 'native' };
+  sequence = { items, i: Math.min(Math.max(0, startIndex || 0), items.length - 1), mode: 'native' };
   sequenceAdvancing = false;
-  el.btnStopOut.disabled = false;
+  updateOutputTransport();
   playSequenceItem();
 }
 
 function playSequenceItem() {
+  if (!sequence) return;
   const it = sequence.items[sequence.i];
   store.ui._fromSequence = true;
   store.select('output', it.outputId);
@@ -254,14 +270,30 @@ function advanceSequence() {
   sequenceAdvancing = true;
   try { el.srcVideo.pause(); } catch { /* ignore */ }
   sequence.i++;
-  if (sequence.i >= sequence.items.length) { stopSequence(); el.srcVideo.pause(); return; }
+  if (sequence.i >= sequence.items.length) { stopSequence(); return; }
   playSequenceItem();
 }
 
+function toggleOutputPause() {
+  if (!sequence) return;
+  if (el.srcVideo.paused) el.srcVideo.play();
+  else el.srcVideo.pause();
+  updateOutputTransport();
+}
+
 function stopSequence() {
+  const hadSequence = !!sequence;
+  if (hadSequence) {
+    try { el.srcVideo.pause(); } catch { /* ignore */ }
+  }
   sequence = null;
   sequenceAdvancing = false;
-  el.btnStopOut.disabled = true;
+  updateOutputTransport();
+}
+
+function updateOutputTransport() {
+  el.btnStopOut.disabled = !sequence;
+  el.btnStopOut.textContent = sequence && el.srcVideo.paused ? 'Resume' : 'Pause';
 }
 
 function ensureSource(sourceId, cb) {
@@ -379,8 +411,9 @@ function renderSeekDecor() {
 
 // ---------- crop sliders ----------
 function wireCrop() {
-  const start = () => { if (store.resolve()?.material) store.beginAction(); };
-  const apply = () => {
+  const startVertical = () => { if (store.resolve()?.material) store.beginAction(); };
+  const startSource = () => { if (store.resolve()?.material) store.beginAction(); };
+  const applyVertical = () => {
     const crop = { panX: +el.panX.value, panY: +el.panY.value, zoom: +el.zoom.value, bgBlur: +el.bgBlur.value };
     const r = store.resolve();
     if (r?.material) {
@@ -390,9 +423,113 @@ function wireCrop() {
     }
   };
   for (const s of [el.panX, el.panY, el.zoom, el.bgBlur]) {
-    s.addEventListener('pointerdown', start);
-    s.addEventListener('input', apply);
+    s.addEventListener('pointerdown', startVertical);
+    s.addEventListener('input', applyVertical);
   }
+  el.verticalCropReset.onclick = () => {
+    const crop = { panX: .5, panY: .5, zoom: 1, bgBlur: 0 };
+    const r = store.resolve();
+    if (r?.material) store.update((p) => { r.material.crop = crop; });
+    else store.setUI({ crop });
+  };
+
+  const applySource = () => {
+    const sourceCrop = { panX: +el.sourcePanX.value, panY: +el.sourcePanY.value, zoom: +el.sourceZoom.value };
+    const r = store.resolve();
+    if (r?.material) {
+      store.updateLive(() => { r.material.sourceCrop = sourceCrop; });
+    } else {
+      store.setUI({ sourceCrop });
+    }
+  };
+  for (const s of [el.sourcePanX, el.sourcePanY, el.sourceZoom]) {
+    s.addEventListener('pointerdown', startSource);
+    s.addEventListener('input', applySource);
+  }
+  el.sourceCropReset.onclick = () => {
+    const sourceCrop = { panX: .5, panY: .5, zoom: 1 };
+    const r = store.resolve();
+    if (r?.material) store.update((p) => { r.material.sourceCrop = sourceCrop; });
+    else store.setUI({ sourceCrop });
+  };
+
+  el.vertPane.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    store.setUI({ cropEditActive: !store.ui.cropEditActive });
+  });
+  el.origPane.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    store.setUI({ sourceCropEditActive: !store.ui.sourceCropEditActive });
+  });
+}
+
+// ---------- active editing areas ----------
+function wireAreas() {
+  const areas = [...document.querySelectorAll('[data-area]')];
+  const setArea = (area) => {
+    if (!area) return;
+    activeArea = area;
+    const patch = {};
+    if (area !== 'source') {
+      if (store.ui.cropEditActive) patch.cropEditActive = false;
+      if (store.ui.sourceCropEditActive) patch.sourceCropEditActive = false;
+    }
+    if (area !== 'timeline' && (store.ui.editMaterialId || store.ui.editMaterialIds?.length)) {
+      patch.editMaterialId = null;
+      patch.editMaterialIds = [];
+    }
+    if (Object.keys(patch).length) store.setUI(patch);
+    for (const node of areas) node.classList.toggle('area-active', node.dataset.area === area);
+    document.body.dataset.activeArea = area;
+  };
+  for (const node of areas) {
+    node.addEventListener('pointerdown', () => setArea(node.dataset.area), { capture: true });
+  }
+  setArea(activeArea);
+}
+
+// ---------- workspace splitters ----------
+function wireWorkspaceSplitters() {
+  const splitters = [...document.querySelectorAll('.pane-splitter')];
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  let drag = null;
+
+  for (const splitter of splitters) {
+    splitter.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      const rect = el.workPane.getBoundingClientRect();
+      drag = {
+        el: splitter,
+        kind: splitter.dataset.splitter,
+        startX: e.clientX,
+        workW: rect.width,
+        materials: document.getElementById('shelfPane').getBoundingClientRect().width,
+        vertical: el.vertPane.getBoundingClientRect().width,
+      };
+      splitter.classList.add('dragging');
+      try { splitter.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    });
+  }
+
+  window.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.startX;
+    if (drag.kind === 'materials') {
+      const max = Math.max(160, drag.workW - drag.vertical - 340);
+      el.workPane.style.setProperty('--materials-col', clamp(drag.materials + dx, 120, max) + 'px');
+    } else if (drag.kind === 'vertical') {
+      const max = Math.max(180, drag.workW - drag.materials - 340);
+      el.workPane.style.setProperty('--vertical-col', clamp(drag.vertical - dx, 150, max) + 'px');
+    }
+    window.dispatchEvent(new Event('resize'));
+  });
+
+  window.addEventListener('pointerup', (e) => {
+    if (!drag) return;
+    try { drag.el.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    drag.el.classList.remove('dragging');
+    drag = null;
+  });
 }
 
 // ---------- shortcuts ----------
@@ -410,7 +547,15 @@ function wireShortcuts() {
     else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); store.redo(); }
     else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveProjectNow(); }
     else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
-    else if (e.key === ' ') { e.preventDefault(); el.btnPlay.click(); }
+    else if (e.key === ' ') {
+      e.preventDefault();
+      if (activeArea === 'edit') {
+        if (sequence) toggleOutputPause();
+        else playOutputs();
+      } else {
+        el.btnPlay.click();
+      }
+    }
   });
 }
 
@@ -421,7 +566,7 @@ function wireConfirm() {
   el.confirmCancel.onclick = () => closeConfirm(false);
   el.confirm.addEventListener('pointerdown', (e) => { if (e.target === el.confirm) closeConfirm(false); });
 }
-function askConfirm(message, okLabel = '削除') {
+function askConfirm(message, okLabel = 'Delete') {
   el.confirmMsg.textContent = message;
   el.confirmOk.textContent = okLabel;
   el.confirm.hidden = false;
@@ -437,21 +582,21 @@ function closeConfirm(val) {
 
 async function deleteSelected() {
   const sel = store.ui.selection;
-  if (!sel.kind) { setStatus('削除対象が選択されていません'); return; }
+  if (!sel.kind) { setStatus('Nothing is selected for deletion'); return; }
 
   if (sel.kind === 'output') {
-    if (await askConfirm('この出力クリップを削除しますか？')) {
+    if (await askConfirm('Delete this output clip?')) {
       outSeq.deleteOutput(sel.id);
-      setStatus('出力クリップを削除しました');
+      setStatus('Output clip deleted');
     }
   } else if (sel.kind === 'material') {
     const deps = store.get().outputs.filter(o => o.materialId === sel.id).length;
     const msg = deps
-      ? 'この素材を削除しますか？ この素材を使う出力クリップ ' + deps + ' 個も削除されます。'
-      : 'この素材を削除しますか？';
+      ? 'Delete this material? ' + deps + ' output clip(s) using it will also be deleted.'
+      : 'Delete this material?';
     if (await askConfirm(msg)) {
       shelf.deleteMaterial(sel.id);
-      setStatus('素材を削除しました');
+      setStatus('Material deleted');
     }
   }
 }
@@ -460,7 +605,7 @@ async function deleteSelected() {
 async function doExport() {
   const settings = prepareExportSettings();
   if (!settings) return;
-  showOverlay('書き出し準備中...');
+  showOverlay('Preparing export...');
   try {
     const blob = await exportProject({
       onStatus: (m) => el.overlayMsg.textContent = m,
@@ -470,7 +615,7 @@ async function doExport() {
     const fileName = settings.fileName;
     if (projectStore.dirHandle()) await projectStore.saveOutputBlob(blob, fileName);
     else downloadBlob(blob, fileName);
-    setStatus('書き出し完了: ' + fileName);
+    setStatus('Export complete: ' + fileName);
   } finally { hideOverlay(); }
 }
 
@@ -483,7 +628,7 @@ function prepareExportSettings() {
   if (!items.length) return null;
 
   const currentName = p.exportName || p.name || 'viralcut';
-  const requested = prompt('書き出しファイル名', stripMp4(currentName));
+  const requested = prompt('Export file name', stripMp4(currentName));
   if (requested == null) return null;
   const baseName = sanitizeFileName(stripMp4(requested)) || 'viralcut';
   const fileName = baseName + '.mp4';
@@ -511,13 +656,13 @@ function resolveExportFps(sources, fallback) {
   if (unique.length === 1) return unique[0];
 
   const picked = prompt(
-    ['ソースのフレームレートが一致しません。', '使用するFPSを入力してください。', '候補: ' + unique.map(v => Number(v.toFixed(3))).join(', ')].join('\n'),
+    ['Source frame rates do not match.', 'Enter the FPS to use.', 'Candidates: ' + unique.map(v => Number(v.toFixed(3))).join(', ')].join('\n'),
     String(fallback || unique[0]),
   );
   if (picked == null) return null;
   const fps = Number(picked);
   if (!Number.isFinite(fps) || fps <= 0) {
-    alert('FPS は正の数値で入力してください');
+    alert('FPS must be a positive number');
     return null;
   }
   return fps;
@@ -560,12 +705,23 @@ function onState(project, ui) {
   // reflect crop in sliders (output's crop if selected, else draft)
   const r = store.resolve();
   const crop = (r && r.crop) || ui.crop;
+  const sourceCrop = (r && r.material?.sourceCrop) || ui.sourceCrop || { panX: .5, panY: .5, zoom: 1 };
   if (crop) {
     if (document.activeElement !== el.panX) el.panX.value = crop.panX;
     if (document.activeElement !== el.panY) el.panY.value = crop.panY;
     if (document.activeElement !== el.zoom) el.zoom.value = crop.zoom;
     if (document.activeElement !== el.bgBlur) el.bgBlur.value = crop.bgBlur ?? 0;
   }
+  if (sourceCrop) {
+    if (document.activeElement !== el.sourcePanX) el.sourcePanX.value = sourceCrop.panX;
+    if (document.activeElement !== el.sourcePanY) el.sourcePanY.value = sourceCrop.panY;
+    if (document.activeElement !== el.sourceZoom) el.sourceZoom.value = sourceCrop.zoom;
+    el.srcVideo.style.setProperty('--source-pan-x', sourceCrop.panX);
+    el.srcVideo.style.setProperty('--source-pan-y', sourceCrop.panY);
+    el.srcVideo.style.setProperty('--source-zoom', sourceCrop.zoom);
+  }
+  el.vertPane.classList.toggle('crop-editing', !!ui.cropEditActive);
+  el.origPane.classList.toggle('crop-editing', !!ui.sourceCropEditActive);
 
   renderSeekDecor();
   scheduleProjectSave();
@@ -585,10 +741,10 @@ async function saveProjectNow() {
   try {
     const ts = await projectStore.save(store.get());
     await projectStore.saveHistory(store.historyState());
-    setStatus('自動保存 ' + new Date(ts).toLocaleTimeString());
+    setStatus('Autosaved ' + new Date(ts).toLocaleTimeString());
   } catch (err) {
     console.warn('auto save failed', err);
-    setStatus('自動保存エラー: ' + (err?.message || err));
+    setStatus('Autosave error: ' + (err?.message || err));
   }
 }
 
@@ -642,7 +798,7 @@ function bindVideo(ui) {
       el.srcVideo.removeAttribute('src');
       try { el.srcVideo.load(); } catch { /* ignore */ }
     }
-    el.srcEmpty.textContent = ui.activeSourceId ? '動画アクセスを復元してください' : '動画を追加してください';
+    el.srcEmpty.textContent = ui.activeSourceId ? 'Relink video access' : 'Add a video to begin';
     el.srcEmpty.hidden = false;
   }
 }
@@ -668,7 +824,7 @@ function guard(fn) {
     try { await fn(...a); }
     catch (err) {
       if (err?.name === 'AbortError') return;
-      console.error(err); setStatus('エラー: ' + (err?.message || err)); alert(err?.message || err);
+      console.error(err); setStatus('Error: ' + (err?.message || err)); alert(err?.message || err);
     }
   };
 }

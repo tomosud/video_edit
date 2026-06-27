@@ -1,4 +1,4 @@
-// cropPreview.js — 9:16 canvas preview of the active source with crop/pan/zoom
+// cropPreview.js - 9:16 canvas preview of the active source with crop/pan/zoom
 import { store } from './store.js?v=20260627-nativepreview3';
 
 let canvas, ctx, video;
@@ -22,11 +22,17 @@ export function init(canvasEl, videoEl) {
 }
 
 function resize() {
-  // 9:16, sized to available height
+  // 9:16, fit to the preview box without leaving a wide unused column.
   const wrap = canvas.parentElement;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const h = wrap.clientHeight;
-  const w = h * 9 / 16;
+  const maxH = Math.max(1, wrap.clientHeight);
+  const maxW = Math.max(1, wrap.clientWidth);
+  let h = maxH;
+  let w = h * 9 / 16;
+  if (w > maxW) {
+    w = maxW;
+    h = w * 16 / 9;
+  }
   canvas.style.height = h + 'px';
   canvas.style.width = w + 'px';
   canvas.width = Math.round(w * dpr);

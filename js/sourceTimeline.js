@@ -1,4 +1,4 @@
-// sourceTimeline.js — zoomable, multi-clip source timeline
+// sourceTimeline.js - zoomable, multi-clip source timeline
 import { store, uid } from './store.js?v=20260627-nativepreview3';
 import { generateWindow, spacing } from './thumbnails.js?v=20260627-nativepreview3';
 import { fmtTime, frameFromTime, frameStartTime, makeFrameScrubber, seekVideoFrame } from './util.js?v=20260627-nativepreview3';
@@ -12,6 +12,7 @@ let duration = 0;
 let fps = 30;
 let regenTimer = 0;
 let renderToken = { cancelled: false };
+let overviewToken = { cancelled: false };
 let renderedWin = null;          // window the current thumbnail DOM was built for
 let scrub = () => {};            // fast scrubber bound to the preview video
 let playRaf = 0;                 // rAF id for smooth playhead while playing
@@ -26,9 +27,10 @@ export function init(elements, videoEl) {
   els.inner.addEventListener('dblclick', onInnerDblClick);
   els.inner.addEventListener('contextmenu', (e) => e.preventDefault()); // allow right-drag pan
   els.playhead.addEventListener('pointerdown', onPlayheadDown);
+  els.playhead.addEventListener('dblclick', (e) => { e.stopPropagation(); onInnerDblClick(e); });
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
-  window.addEventListener('resize', () => { layout(); scheduleRegen(); });
+  window.addEventListener('resize', () => { layout(); scheduleRegen(); scheduleOverviewRegen(); });
 
   if (els.overview) els.overview.addEventListener('pointerdown', onOverviewDown);
 
@@ -57,11 +59,40 @@ const outPreviewT = (m) => clampT(Math.max(m.in, m.out - frameDur()));
 const frameOf = (t) => frameFromTime(t, fps, Math.max(0, Math.round(duration * fps) - 1));
 const previewAt = (t) => scrub(frameOf(t));
 const seekPreviewAt = (t) => seekVideoFrame(video, frameOf(t), fps, duration);
+const materialLen = (m) => Math.max(0, m.out - m.in);
+
+function editingIds() {
+  const ids = Array.isArray(store.ui.editMaterialIds) ? store.ui.editMaterialIds : [];
+  if (ids.length) return new Set(ids);
+  return store.ui.editMaterialId ? new Set([store.ui.editMaterialId]) : new Set();
+}
+
+function setEditingMaterials(ids) {
+  const unique = [...new Set(ids.filter(Boolean))];
+  store.setUI({ editMaterialIds: unique, editMaterialId: unique[0] || null });
+}
+
+function materialsAtTime(t) {
+  const eps = Math.max(1e-6, 1 / fps / 8);
+  return store.get().materials
+    .filter(m => m.sourceId === curSourceId && t >= m.in - eps && t < m.out + eps)
+    .sort((a, b) => materialLen(a) - materialLen(b));
+}
+
+function shortestMaterial(items) {
+  return [...items].sort((a, b) => materialLen(a) - materialLen(b))[0] || null;
+}
 
 // ---------- state sync ----------
 function onState(project, ui) {
   const src = store.activeSource();
-  if (!src) { curSourceId = null; els.thumbRow.innerHTML = ''; els.bands.innerHTML = ''; return; }
+  if (!src) {
+    curSourceId = null;
+    els.thumbRow.innerHTML = '';
+    if (els.ovThumbRow) els.ovThumbRow.innerHTML = '';
+    els.bands.innerHTML = '';
+    return;
+  }
 
   if (src.id !== curSourceId) {
     curSourceId = src.id;
@@ -69,6 +100,7 @@ function onState(project, ui) {
     fps = src.fps || 30;
     store.ui.view = { start: 0, end: duration || 1 };
     regenNow();
+    regenOverviewNow();
   }
   layout();
 }
@@ -118,25 +150,37 @@ function onInnerDown(e) {
   }
   if (e.button !== 0) return;
 
-  const band = e.target.closest('.clip-band');
-  if (band) {
-    const id = band.dataset.id;
+  const t = clampT(xToTime(e.clientX));
+  const hits = materialsAtTime(t);
+  if (hits.length) {
+    const band = e.target.closest('.clip-band');
+    const target = band ? store.getMaterial(band.dataset.id) : null;
+    const editing = editingIds();
+    const handleHit = target && editing.has(target.id) && e.target.classList.contains('h');
+    const m = handleHit ? target : shortestMaterial(hits);
+    if (!m) return;
     store.ui._fromTimeline = true;                // don't auto-focus the view
-    store.select('material', id);                 // left-click selects
-    const m = store.getMaterial(id);
-    if (e.target.classList.contains('h')) {
+    store.select('material', m.id);               // left-click selects
+    seekFromClientX(e.clientX);
+    if (!editing.has(m.id)) {
+      gesture = null;
+      e.preventDefault();
+      return;
+    }
+    if (handleHit) {
       const edge = e.target.classList.contains('l') ? 'in' : 'out';
-      gesture = { type: 'resize', id, edge, started: false };
+      gesture = { type: 'resize', id: m.id, edge, started: false };
     } else {
-      gesture = { type: 'move', id, grabDT: xToTime(e.clientX) - m.in, started: false };
+      gesture = { type: 'move', id: m.id, grabDT: t - m.in, started: false };
     }
     e.preventDefault();
     return;
   }
 
-  // left-click on empty area -> just deselect (no creation, no pan)
+  // left-click on empty area -> move preview/playhead without editing
   store.select(null, null);
   gesture = null;
+  seekFromClientX(e.clientX);
 }
 
 function onPointerMove(e) {
@@ -211,12 +255,29 @@ function seekFromClientX(clientX) {
   positionPlayhead(frameStartTime(frameOf(t), fps));
 }
 
-// double-click on empty area -> create a clip one displayed-frame (cell) wide.
+// Double-click band -> enter edit mode.
+// Double-click empty:
+//   - while editing: leave edit mode
+//   - otherwise: create a clip one displayed-frame (cell) wide and edit it.
 // Does NOT change zoom/view.
 function onInnerDblClick(e) {
   if (!duration) return;
-  if (e.target.closest('.clip-band')) return; // band dbl-click = play (handled per band)
   const t = clampT(xToTime(e.clientX));
+  const hits = materialsAtTime(t);
+  if (hits.length) {
+    const priority = shortestMaterial(hits);
+    store.ui._fromTimeline = true;
+    store.select('material', priority.id);
+    setEditingMaterials(hits.map(m => m.id));
+    seekFromClientX(e.clientX);
+    e.preventDefault();
+    return;
+  }
+  if (editingIds().size) {
+    setEditingMaterials([]);
+    seekFromClientX(e.clientX);
+    return;
+  }
   const count = Math.max(6, Math.round(innerW() / spacing()));
   const cellDur = Math.max(1 / fps, span() / count);
   let nin = snapT(t - cellDur / 2);
@@ -232,6 +293,7 @@ function onInnerDblClick(e) {
   }));
   store.ui._fromTimeline = true;                 // creating shouldn't move the view
   store.select('material', id);
+  setEditingMaterials([id]);
 }
 
 // ---------- focus to a selected material ----------
@@ -261,6 +323,21 @@ async function regenNow() {
   await generateWindow(src, view(), els.thumbRow, { fps, token: renderToken });
 }
 
+function scheduleOverviewRegen() {
+  clearTimeout(overviewTimer);
+  overviewTimer = setTimeout(regenOverviewNow, REGEN_DEBOUNCE);
+}
+
+let overviewTimer = 0;
+async function regenOverviewNow() {
+  if (!els.ovThumbRow) return;
+  const src = store.activeSource();
+  if (!src || !duration) return;
+  overviewToken.cancelled = true;
+  overviewToken = { cancelled: false };
+  await generateWindow(src, { start: 0, end: duration || 1 }, els.ovThumbRow, { fps, token: overviewToken });
+}
+
 // While zooming/panning, instantly track the gesture by transforming the
 // already-rendered thumbnails until the real regen settles (no blank flash).
 function applyThumbTransform() {
@@ -281,7 +358,7 @@ function layout() {
   renderOverview();
   positionPlayhead();
   if (els.range) {
-    els.range.textContent = duration ? `${fmtTime(view().start)} – ${fmtTime(view().end)}（全 ${fmtTime(duration)}）` : '—';
+    els.range.textContent = duration ? `${fmtTime(view().start)} - ${fmtTime(view().end)} (total ${fmtTime(duration)})` : '-';
   }
 }
 
@@ -296,19 +373,25 @@ function selectedMaterialId() {
 function renderBands() {
   const W = innerW();
   const selMat = selectedMaterialId();
+  const editSet = editingIds();
   const mats = store.get().materials.filter(m => m.sourceId === curSourceId);
   els.bands.innerHTML = '';
   for (const m of mats) {
     const x1 = timeToX(m.in), x2 = timeToX(m.out);
     if (x2 < 0 || x1 > W) continue; // off-screen
     const el = document.createElement('div');
-    el.className = 'clip-band' + (m.id === selMat ? ' selected' : '');
+    el.className = 'clip-band' +
+      (m.id === selMat ? ' selected' : '') +
+      (editSet.has(m.id) ? ' editing' : '');
     el.dataset.id = m.id;
     el.style.left = x1 + 'px';
     el.style.width = Math.max(2, x2 - x1) + 'px';
+    const visibleLeft = Math.max(0, x1);
+    const visibleRight = Math.min(W, x2);
+    const labelX = Math.max(0, Math.min(Math.max(2, x2 - x1), (visibleLeft + visibleRight) / 2 - x1));
+    el.style.setProperty('--edit-label-x', labelX + 'px');
     el.innerHTML =
       `<div class="h l"></div><div class="lbl">${fmtTime(m.out - m.in)}</div><div class="h r"></div>`;
-    el.addEventListener('dblclick', () => playRange(m.in, m.out));
     els.bands.appendChild(el);
   }
 }

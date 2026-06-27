@@ -1,4 +1,4 @@
-// clipList.js — output clip cards: add, select, delete, drag-reorder
+// clipList.js - output clip cards: add, select, delete, drag-reorder
 import { store, uid } from './store.js?v=20260627-nativepreview3';
 import { singleThumb } from './thumbnails.js?v=20260627-nativepreview3';
 import { fmtDur } from './util.js?v=20260627-nativepreview3';
@@ -47,8 +47,8 @@ function render() {
   if (!listEl) return;
 
   if (!p.clips.length) {
-    listEl.innerHTML = '<div class="clip-empty">IN/OUT を決めて「クリップ追加」</div>';
-    totalEl.textContent = '合計 0:00';
+    listEl.innerHTML = '<div class="clip-empty">Set IN/OUT, then add a clip</div>';
+    totalEl.textContent = 'Total 0:00';
     return;
   }
 
@@ -59,7 +59,7 @@ function render() {
     listEl.appendChild(card(clip));
     if (!thumbCache.has(clip.id)) makeThumb(clip.id);
   }
-  totalEl.textContent = '合計 ' + fmtDur(total);
+  totalEl.textContent = 'Total ' + fmtDur(total);
 }
 
 function card(clip) {
@@ -78,13 +78,6 @@ function card(clip) {
   meta.innerHTML =
     `<span class="dur">${fmtDur(clip.out - clip.in)}</span>` +
     `<span class="src">${src ? src.fileName : '?'}</span>`;
-
-  const del = document.createElement('button');
-  del.className = 'clip-del';
-  del.textContent = '🗑';
-  del.title = '削除';
-  del.onclick = (e) => { e.stopPropagation(); removeClip(clip.id); };
-  meta.appendChild(del);
 
   el.appendChild(img);
   el.appendChild(meta);

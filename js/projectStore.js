@@ -120,7 +120,7 @@ async function adoptProjectWorkspace(project) {
 
 // Create a new project in a freshly chosen workspace folder.
 export async function newProject() {
-  if (!fsSupported) throw new Error('このブラウザは File System Access API に対応していません。Chrome/Edge を使用してください。');
+  if (!fsSupported) throw new Error('This browser does not support the File System Access API. Use Chrome or Edge.');
   const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
   await ensureWorkspace(dir);
   return dir.name;
@@ -128,7 +128,7 @@ export async function newProject() {
 
 // Open an existing workspace folder.
 export async function openProject() {
-  if (!fsSupported) throw new Error('このブラウザは File System Access API に対応していません。Chrome/Edge を使用してください。');
+  if (!fsSupported) throw new Error('This browser does not support the File System Access API. Use Chrome or Edge.');
   const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
   await ensureWorkspace(dir);
   const text = await readTextFile(_workHandle, PROJECT_FILE);
@@ -150,8 +150,8 @@ export async function reattach() {
 }
 
 export async function save(project) {
-  if (!_dirHandle || !_workHandle) throw new Error('プロジェクトフォルダが開かれていません');
-  if (!(await ensurePermission(_dirHandle))) throw new Error('書き込み権限がありません');
+  if (!_dirHandle || !_workHandle) throw new Error('Project folder is not open');
+  if (!(await ensurePermission(_dirHandle))) throw new Error('Write permission is not available');
   const out = await projectForSave(project);
   await writeFile(_workHandle, PROJECT_FILE, JSON.stringify(out, null, 2));
   await writeFile(_dirHandle, '.gitignore', GITIGNORE);
@@ -171,8 +171,8 @@ export async function loadHistory() {
 }
 
 export async function saveOutputBlob(blob, name) {
-  if (!_dirHandle) throw new Error('プロジェクトフォルダが開かれていません');
-  if (!(await ensurePermission(_dirHandle))) throw new Error('書き込み権限がありません');
+  if (!_dirHandle) throw new Error('Project folder is not open');
+  if (!(await ensurePermission(_dirHandle))) throw new Error('Write permission is not available');
   await writeBlob(_dirHandle, name, blob);
   return name;
 }

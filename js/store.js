@@ -1,4 +1,4 @@
-// store.js — central editing state + pub/sub + undo/redo + debounced autosave
+// store.js - central editing state + pub/sub + undo/redo + debounced autosave
 const HISTORY_LIMIT = 100;
 const AUTOSAVE_DEBOUNCE = 500;
 
@@ -8,8 +8,8 @@ function emptyProject() {
     name: 'untitled',
     output: { width: 1080, height: 1920, fps: 30 },
     sources: [],     // {id, fileName, mediaKey, size, lastModified, duration, fps, width, height, hasAudio, handleKey}
-    materials: [],   // {id, sourceId, in, out}            — cutout clips (shelf)
-    outputs: [],     // {id, materialId, crop:{panX,panY,zoom}, texts:[]} — sequence
+    materials: [],   // {id, sourceId, in, out, title?, sourceCrop?, crop?} - cutout clips (shelf)
+    outputs: [],     // {id, materialId, crop:{panX,panY,zoom}, texts:[]} - sequence
     bgm: null,
     savedAt: 0,
   };
@@ -22,6 +22,11 @@ function emptyUI() {
     view: { start: 0, end: 0 },            // source-timeline visible window (sec)
     crop: { panX: 0.5, panY: 0.5, zoom: 1 }, // draft crop for new materials/preview
     playRange: null,                        // {start,end} active loop range
+    editMaterialId: null,                   // material currently editable on timelines
+    editMaterialIds: [],                    // materials currently editable on timelines
+    cropEditActive: false,                  // vertical preview crop sliders are visible
+    sourceCrop: { panX: 0.5, panY: 0.5, zoom: 1 },
+    sourceCropEditActive: false,            // source preview crop sliders are visible
   };
 }
 
@@ -158,6 +163,7 @@ function migrate(p) {
 }
 
 function defaultCrop() { return { panX: .5, panY: .5, zoom: 1, bgBlur: 0 }; }
+function defaultSourceCrop() { return { panX: .5, panY: .5, zoom: 1 }; }
 
 function normalizeProject(p) {
   const outputs = p.outputs || [];
@@ -167,6 +173,7 @@ function normalizeProject(p) {
       m.crop = out?.crop || defaultCrop();
     }
     m.crop = { ...defaultCrop(), ...m.crop };
+    m.sourceCrop = { ...defaultSourceCrop(), ...(m.sourceCrop || {}) };
   }
   for (const o of outputs) delete o.crop;
   return p;

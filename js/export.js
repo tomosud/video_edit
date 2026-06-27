@@ -85,10 +85,10 @@ function drawFrame(ctx, src, outW, outH, crop) {
 
 async function makeSourceSession(source) {
   const file = await freshFileFor(source.id);
-  if (!file) throw new Error(`未リンクの動画があります: ${source.fileName}`);
+  if (!file) throw new Error(`A video is not linked: ${source.fileName}`);
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const videoTrack = await input.getPrimaryVideoTrack();
-  if (!videoTrack) throw new Error(`動画トラックがありません: ${source.fileName}`);
+  if (!videoTrack) throw new Error(`Video track not found: ${source.fileName}`);
   const videoSink = new CanvasSink(videoTrack, { poolSize: 3 });
   const audioTrack = await input.getPrimaryAudioTrack();
   const audioSink = audioTrack && await audioTrack.canDecode()
@@ -106,7 +106,7 @@ async function chooseCodec(width, height, bitrate) {
       /* try next */
     }
   }
-  throw new Error('このブラウザで利用できる動画エンコーダが見つかりません');
+  throw new Error('No usable video encoder was found in this browser');
 }
 
 async function chooseAudioCodec(sampleRate, numberOfChannels, bitrate) {
@@ -124,7 +124,7 @@ async function chooseAudioCodec(sampleRate, numberOfChannels, bitrate) {
 async function getFrameCanvas(session, sourceFps, sourceFrame) {
   const t = Math.max(0, sourceFrame / sourceFps);
   const wrapped = await session.videoSink.getCanvas(t);
-  if (!wrapped?.canvas) throw new Error(`フレーム取得に失敗しました: ${sourceFrame}`);
+  if (!wrapped?.canvas) throw new Error(`Failed to read frame: ${sourceFrame}`);
   return wrapped.canvas;
 }
 
@@ -166,7 +166,7 @@ function outputItems(project) {
 export async function exportProject({ onProgress, onStatus } = {}) {
   const project = store.get();
   const items = outputItems(project);
-  if (!items.length) throw new Error('出力クリップがありません');
+  if (!items.length) throw new Error('No output clips to export');
 
   const outW = even(project.output.width || 608);
   const outH = even(project.output.height || 1080);
@@ -181,10 +181,10 @@ export async function exportProject({ onProgress, onStatus } = {}) {
   const audioBitrate = 160_000;
   const audioCodec = wantsAudio ? await chooseAudioCodec(audioSampleRate, audioChannels, audioBitrate) : null;
   if (wantsAudio && !audioCodec) {
-    throw new Error('このブラウザで利用できる音声エンコーダが見つかりません');
+    throw new Error('No usable audio encoder was found in this browser');
   }
 
-  onStatus?.(`エンコード準備中 (${outW}x${outH} ${fps}fps ${codec}${audioCodec ? ` + ${audioCodec}` : ''})...`);
+  onStatus?.(`Preparing encoder (${outW}x${outH} ${fps}fps ${codec}${audioCodec ? ` + ${audioCodec}` : ''})...`);
 
   const target = new BufferTarget();
   const format = new Mp4OutputFormat();
@@ -217,7 +217,7 @@ export async function exportProject({ onProgress, onStatus } = {}) {
   try {
     for (const id of sourceIds) {
       const src = sourceById(project, id);
-      if (!src) throw new Error(`ソースが見つかりません: ${id}`);
+      if (!src) throw new Error(`Source not found: ${id}`);
       sessions.set(id, await makeSourceSession(src));
     }
 
@@ -230,7 +230,7 @@ export async function exportProject({ onProgress, onStatus } = {}) {
       const it = bounds[i];
       const src = sourceById(project, it.sourceId);
       const session = sessions.get(it.sourceId);
-      onStatus?.(`クリップ ${i + 1}/${bounds.length} をエンコード中...`);
+      onStatus?.(`Encoding clip ${i + 1}/${bounds.length}...`);
       if (audioSource) await addAudioClip(audioSource, session, it.bounds, outTime);
 
       for (let localFrame = 0; localFrame < it.bounds.frameCount; localFrame++) {
@@ -255,7 +255,7 @@ export async function exportProject({ onProgress, onStatus } = {}) {
 
     await output.finalize();
     onProgress?.(1);
-    onStatus?.('書き出し完了');
+    onStatus?.('Export complete');
     return new Blob([target.buffer], { type: 'video/mp4' });
   } finally {
     for (const session of sessions.values()) {

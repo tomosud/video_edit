@@ -1,4 +1,4 @@
-// trimTimeline.js — source strip: IN/OUT handles, playhead, zoom, click-to-seek
+// trimTimeline.js - source strip: IN/OUT handles, playhead, zoom, click-to-seek
 import { store } from './store.js?v=20260627-nativepreview3';
 import { generateStrip } from './thumbnails.js?v=20260627-nativepreview3';
 
@@ -111,7 +111,7 @@ function endDrag() {
   if (dragging) {
     dragging = null;
     // commit a history entry on drop (snapshot of project is unchanged here;
-    // trim draft lives in UI, so no project mutation — nothing to undo yet)
+    // Trim draft lives in UI, so no project mutation and nothing to undo yet.
   }
 }
 

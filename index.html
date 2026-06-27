@@ -3,38 +3,42 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ViralCut — Vertical Video Editor</title>
+  <title>ViralCut - Vertical Video Editor</title>
   <script src="lib/coi-serviceworker.js"></script>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <div id="app">
 
-    <!-- ===== Row 1: Menu ===== -->
     <header id="menu">
       <span class="brand">ViralCut</span>
-      <button id="btnNewProject" class="btn">新規</button>
-      <button id="btnOpenProject" class="btn">開く</button>
+      <button id="btnNewProject" class="btn">New</button>
+      <button id="btnOpenProject" class="btn">Open</button>
       <span class="sep"></span>
-      <button id="btnAddVideo" class="btn" disabled>動画を追加</button>
+      <button id="btnAddVideo" class="btn" disabled>Add Video</button>
       <select id="sourceSelect" class="sel" disabled></select>
-      <button id="btnRelinkMissing" class="btn" hidden disabled>動画アクセスを復元</button>
+      <button id="btnRelinkMissing" class="btn" hidden disabled>Relink Videos</button>
       <span class="sep"></span>
-      <button id="btnUndo" class="btn" disabled title="Ctrl+Z">↶</button>
-      <button id="btnRedo" class="btn" disabled title="Ctrl+Shift+Z">↷</button>
+      <button id="btnUndo" class="btn" disabled title="Ctrl+Z">Undo</button>
+      <button id="btnRedo" class="btn" disabled title="Ctrl+Shift+Z">Redo</button>
       <span class="sep"></span>
-      <button id="btnExport" class="btn btn-accent" disabled>書き出し</button>
+      <button id="btnExport" class="btn btn-accent" disabled>Export</button>
       <span class="spacer"></span>
-      <span id="status" class="status">プロジェクト未選択</span>
+      <span id="status" class="status">No project selected</span>
     </header>
 
-    <!-- ===== Row 2: Source timeline ===== -->
-    <section id="srcPane" class="pane">
+    <section id="srcPane" class="pane area-pane" data-area="timeline">
       <div class="pane-head">
-        <span>ソースタイムライン</span>
-        <span class="hint">空クリックでクリップ作成 / 端ドラッグでトリム / ダブルクリックで再生 / ホイールでズーム</span>
+        <span>1 Timeline</span>
+        <span class="hint">Click to seek / double-click empty space to create a material / double-click a material to edit</span>
         <span class="spacer"></span>
-        <span id="srcRange" class="time">—</span>
+        <span id="srcRange" class="time">-</span>
+      </div>
+      <div id="tlOverview" class="tl-overview" title="Full overview. Click or drag to move the visible range">
+        <div id="ovThumbRow" class="ov-thumb-row"></div>
+        <div id="ovClips" class="ov-clips"></div>
+        <div id="ovWindow" class="ov-window"></div>
+        <div id="ovPlayhead" class="ov-playhead"></div>
       </div>
       <div id="tlScroll" class="tl-scroll">
         <div id="tlInner" class="tl-inner">
@@ -43,45 +47,52 @@
           <div id="tlPlayhead" class="playhead"></div>
         </div>
       </div>
-      <canvas id="frameStrip" class="frame-strip" title="現在フレーム付近。クリックで移動、ホイールで1フレーム移動"></canvas>
-      <div id="tlOverview" class="tl-overview" title="全体俯瞰 — クリック/ドラッグで表示範囲を移動">
-        <div id="ovClips" class="ov-clips"></div>
-        <div id="ovWindow" class="ov-window"></div>
-        <div id="ovPlayhead" class="ov-playhead"></div>
-      </div>
+      <canvas id="frameStrip" class="frame-strip" title="Frames near the current position. Click to seek, double-click to edit material"></canvas>
     </section>
 
-    <!-- ===== Row 3: Shelf + previews ===== -->
-    <section id="workPane">
+    <section id="workPane" class="area-pane" data-area="source">
       <div id="shelfPane" class="pane">
-        <div class="pane-head"><span>切り出し素材</span><span class="spacer"></span><span id="shelfCount" class="time">0</span></div>
+        <div class="pane-head"><span>2 Materials</span><span class="spacer"></span><span id="shelfCount" class="time">0</span></div>
         <div id="shelf" class="shelf">
-          <div class="placeholder">タイムラインでクリップを作成</div>
+          <div class="placeholder">Create materials on the timeline</div>
         </div>
       </div>
+      <div class="pane-splitter" data-splitter="materials" title="Drag to resize materials"></div>
 
-      <div id="origPane" class="pane">
-        <div class="pane-head"><span>元比率プレビュー</span><span class="spacer"></span><span id="origTime" class="time">0:00 / 0:00</span></div>
+      <div id="origPane" class="pane crop-hover-target">
+        <div class="pane-head">
+          <span>Source Preview</span>
+          <span class="spacer"></span>
+          <span class="hint crop-edit-hint">Double-click to edit crop</span>
+          <span id="origTime" class="time">0:00 / 0:00</span>
+        </div>
         <div class="video-wrap">
           <video id="srcVideo" playsinline preload="auto"></video>
-          <div id="srcEmpty" class="placeholder abs">動画を追加してください</div>
+          <div id="srcEmpty" class="placeholder abs">Add a video to begin</div>
         </div>
-        <div id="seekBar" class="seekbar" title="ドラッグで高速シーク">
+        <div id="seekBar" class="seekbar" title="Drag to scrub">
           <div id="seekMarks" class="seek-marks"></div>
           <div id="seekRange" class="seek-range"></div>
           <div id="seekFill" class="seek-fill"></div>
           <div id="seekHead" class="seek-head"></div>
         </div>
-        <div class="transport">
-          <button id="btnPlay" class="btn" title="Space">▶</button>
-          <button id="btnLoop" class="btn" title="範囲ループ">↻ ループ</button>
+        <div class="transport source-transport">
+          <button id="btnPlay" class="btn" title="Space">Play</button>
+          <button id="btnLoop" class="btn" title="Range loop">Loop</button>
           <span class="spacer"></span>
-          <span id="frameInfo" class="time frame-info">—</span>
+          <span id="frameInfo" class="time frame-info">-</span>
+        </div>
+        <div class="source-crop-controls crop-controls">
+          <label>X <input id="sourcePanX" type="range" min="0" max="1" step="0.001" value="0.5"></label>
+          <label>Y <input id="sourcePanY" type="range" min="0" max="1" step="0.001" value="0.5"></label>
+          <label>Z <input id="sourceZoom" type="range" min="0.35" max="4" step="0.01" value="1"></label>
+          <button id="sourceCropReset" class="btn btn-sm" type="button">Reset</button>
         </div>
       </div>
+      <div class="pane-splitter" data-splitter="vertical" title="Drag to resize vertical preview"></div>
 
-      <div id="vertPane" class="pane">
-        <div class="pane-head"><span>縦動画 9:16</span></div>
+      <div id="vertPane" class="pane crop-hover-target">
+        <div class="pane-head"><span>Vertical Preview 9:16</span><span class="spacer"></span><span class="hint crop-edit-hint">Double-click to edit crop</span></div>
         <div class="preview-wrap">
           <canvas id="vertCanvas"></canvas>
         </div>
@@ -90,22 +101,22 @@
           <label>Y <input id="panY" type="range" min="0" max="1" step="0.001" value="0.5"></label>
           <label>Z <input id="zoom" type="range" min="0.35" max="4" step="0.01" value="1"></label>
           <label>B <input id="bgBlur" type="range" min="0" max="1" step="0.01" value="0"></label>
+          <button id="verticalCropReset" class="btn btn-sm" type="button">Reset</button>
         </div>
       </div>
     </section>
 
-    <!-- ===== Row 4: Output sequence ===== -->
-    <section id="outPane" class="pane">
+    <section id="outPane" class="pane area-pane" data-area="edit">
       <div class="pane-head">
-        <span>出力クリップ（編集）</span>
-        <button id="btnPlayOut" class="btn btn-sm" disabled title="出力を連続再生">▶ 連続再生</button>
-        <button id="btnStopOut" class="btn btn-sm" disabled title="停止">■</button>
-        <span class="hint">素材をここへドロップ / ダブルクリックで再生 / ドラッグで並び替え</span>
+        <span>3 Edit</span>
+        <button id="btnPlayOut" class="btn btn-sm" disabled title="Play from start">Play From Start</button>
+        <button id="btnStopOut" class="btn btn-sm" disabled title="Pause or resume">Pause</button>
+        <span class="hint">Drag materials here / double-click a clip to play from that point / drag to reorder</span>
         <span class="spacer"></span>
-        <span id="totalDur" class="time">合計 0:00</span>
+        <span id="totalDur" class="time">Total 0:00</span>
       </div>
       <div id="outList" class="out-list">
-        <div class="placeholder">素材をドロップして並べる</div>
+        <div class="placeholder">Drag materials here to build the edit</div>
       </div>
     </section>
 
@@ -113,18 +124,18 @@
 
   <div id="overlay" class="overlay" hidden>
     <div class="overlay-box">
-      <div id="overlayMsg">処理中…</div>
+      <div id="overlayMsg">Processing...</div>
       <progress id="overlayProg" max="100" value="0"></progress>
     </div>
   </div>
 
   <div id="confirm" class="overlay" hidden>
     <div class="overlay-box confirm-box">
-      <div id="confirmTitle" class="confirm-title">削除の確認</div>
+      <div id="confirmTitle" class="confirm-title">Confirm Delete</div>
       <div id="confirmMsg" class="confirm-msg"></div>
       <div class="confirm-actions">
-        <button id="confirmCancel" class="btn">キャンセル</button>
-        <button id="confirmOk" class="btn btn-danger">削除</button>
+        <button id="confirmCancel" class="btn">Cancel</button>
+        <button id="confirmOk" class="btn btn-danger">Delete</button>
       </div>
     </div>
   </div>

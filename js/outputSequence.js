@@ -1,4 +1,4 @@
-// outputSequence.js — output clips (editing place): drop, reorder, select, play
+// outputSequence.js - output clips (editing area): drop, reorder, select, play from item
 import { store, uid } from './store.js?v=20260627-nativepreview3';
 import { cardThumb, cloneCanvas } from './thumbnails.js?v=20260627-nativepreview3';
 import { fmtDur } from './util.js?v=20260627-nativepreview3';
@@ -31,11 +31,14 @@ export function init(elements, { play } = {}) {
 function render() {
   const outs = store.get().outputs;
   let total = 0;
-  for (const o of outs) { const m = store.getMaterial(o.materialId); if (m) total += Math.max(0, m.out - m.in); }
-  totalEl.textContent = '合計 ' + fmtDur(total);
+  for (const o of outs) {
+    const m = store.getMaterial(o.materialId);
+    if (m) total += Math.max(0, m.out - m.in);
+  }
+  totalEl.textContent = 'Total ' + fmtDur(total);
 
   if (!outs.length) {
-    listEl.innerHTML = '<div class="placeholder">素材をドロップして並べる</div>';
+    listEl.innerHTML = '<div class="placeholder">Drag materials here to build the edit</div>';
     return;
   }
   const sel = store.ui.selection;
@@ -47,8 +50,22 @@ function render() {
 }
 
 function midSig(src, m) { return Math.round((m.in + m.out) / 2 * (src.fps || 30)); }
+function displayName(m, src) { return (m?.title || '').trim() || src?.fileName || 'Untitled material'; }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[ch]));
+}
+function infoTitle(m, src) {
+  if (!m) return 'Missing material';
+  return [
+    displayName(m, src),
+    'Duration: ' + fmtDur(Math.max(0, m.out - m.in)),
+    'Source: ' + (src?.fileName || '?'),
+  ].join('\n');
+}
 
-// keep the output thumbnail in sync with its material's current trim.
+// Keep the output thumbnail in sync with its material's current trim.
 async function ensureThumb(o) {
   const m = store.getMaterial(o.materialId);
   const src = m && store.getSource(m.sourceId);
@@ -70,8 +87,8 @@ async function ensureThumb(o) {
   } catch { /* media not linked / decode failed */ }
   finally {
     thumbBusy.set(o.id, false);
-    // only chase a newer position if this render succeeded — otherwise retrying
-    // an unlinked/failed source would loop forever.
+    // Only chase a newer position if this render succeeded. Otherwise an
+    // unlinked or failed source could retry forever.
     if (ok) {
       const cm = store.getMaterial(o.materialId);
       if (cm && midSig(src, cm) !== thumbSig.get(o.id)) ensureThumb(o);
@@ -86,6 +103,7 @@ function card(o, selected) {
   el.className = 'card' + (selected ? ' selected' : '');
   el.draggable = true;
   el.dataset.id = o.id;
+  el.title = infoTitle(m, src);
 
   const thumb = document.createElement('div');
   thumb.className = 'thumb';
@@ -94,21 +112,18 @@ function card(o, selected) {
   const meta = document.createElement('div');
   meta.className = 'meta';
   const dur = m ? (m.out - m.in) : 0;
-  meta.innerHTML = `<span class="dur">${fmtDur(dur)}</span><span class="src">${src ? src.fileName : '?'}</span>`;
-  const del = document.createElement('button');
-  del.className = 'del'; del.textContent = '🗑'; del.title = '削除';
-  del.onclick = (e) => { e.stopPropagation(); deleteOutput(o.id); };
-  meta.appendChild(del);
+  meta.innerHTML = `<span class="dur">${fmtDur(dur)}</span><span class="src">${escapeHtml(displayName(m, src))}</span>`;
 
-  el.appendChild(thumb); el.appendChild(meta);
+  el.appendChild(thumb);
+  el.appendChild(meta);
   el.onclick = () => store.select('output', o.id);
-  el.ondblclick = () => { if (m) onPlay(m.in, m.out); };
+  el.ondblclick = () => { if (m) onPlay(o.id); };
   wireDrag(el);
   return el;
 }
 
 // Delete just this output instance. The underlying cutout material is kept
-// (it may still be used by other outputs or re-dropped later).
+// because it may still be used by other outputs or re-dropped later.
 export function deleteOutput(id) {
   store.update((p, ui) => {
     p.outputs = p.outputs.filter(o => o.id !== id);
@@ -128,7 +143,11 @@ function wireDrag(el) {
     e.dataTransfer.effectAllowed = 'move';
     el.classList.add('dragging');
   });
-  el.addEventListener('dragend', () => { dragId = null; el.classList.remove('dragging'); listEl.classList.remove('drop-active'); });
+  el.addEventListener('dragend', () => {
+    dragId = null;
+    el.classList.remove('dragging');
+    listEl.classList.remove('drop-active');
+  });
 }
 
 function onDrop(e) {
@@ -146,7 +165,6 @@ function onDrop(e) {
   };
 
   if (matId) {
-    // create new output from material, inserted at drop position
     const id = uid('out');
     store.update((p, ui) => {
       const out = { id, materialId: matId, texts: [] };

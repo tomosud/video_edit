@@ -33,7 +33,7 @@ async function linkedFile(source) {
 
 async function openFrameSession(source, opts = {}) {
   const file = await linkedFile(source);
-  if (!file) throw new Error(`動画アクセスが復帰していません: ${source.fileName || source.id}`);
+  if (!file) throw new Error(`Video access has not been restored: ${source.fileName || source.id}`);
 
   const key = sessionKey(source, opts);
   const existing = sessions.get(key);
@@ -42,11 +42,11 @@ async function openFrameSession(source, opts = {}) {
 
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const ready = (async () => {
-    if (!(await input.canRead())) throw new Error(`Mediabunny で読めない動画です: ${source.fileName || source.id}`);
+    if (!(await input.canRead())) throw new Error(`Mediabunny cannot read this video: ${source.fileName || source.id}`);
     const videoTrack = await input.getPrimaryVideoTrack();
-    if (!videoTrack) throw new Error(`動画トラックがありません: ${source.fileName || source.id}`);
+    if (!videoTrack) throw new Error(`Video track not found: ${source.fileName || source.id}`);
     if (!(await videoTrack.canDecode().catch(() => false))) {
-      throw new Error(`WebCodecs でデコードできない動画です: ${source.fileName || source.id}`);
+      throw new Error(`WebCodecs cannot decode this video: ${source.fileName || source.id}`);
     }
     const sinkOpts = { poolSize: opts.poolSize || 2 };
     if (opts.width) sinkOpts.width = opts.width;
@@ -70,7 +70,7 @@ export async function getVideoFrameCanvas(source, frame, fps, opts = {}) {
     const sink = await entry.ready;
     const t = frameProbeTime(safeFrame, frameRate, duration);
     const wrapped = await sink.getCanvas(t);
-    if (!wrapped?.canvas) throw new Error(`フレームを取得できません: ${safeFrame}`);
+    if (!wrapped?.canvas) throw new Error(`Could not read frame: ${safeFrame}`);
     return cloneCanvas(wrapped.canvas);
   });
   entry.chain = job.catch(() => {});
