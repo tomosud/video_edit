@@ -1,6 +1,7 @@
 // frameStrip.js - fixed per-frame strip around the current preview frame
 import { store } from './store.js?v=20260627-nativepreview3';
 import { frameCanvas } from './thumbnails.js?v=20260627-nativepreview3';
+import { frameFromTime, frameStartTime, seekVideoFrame } from './util.js?v=20260627-nativepreview3';
 
 const RADIUS = 10;
 const SLOT_COUNT = RADIUS * 2 + 1;
@@ -40,7 +41,7 @@ function activeState() {
   const duration = source.duration || video.duration || 0;
   if (!fps || !duration) return null;
   const totalFrames = Math.max(0, Math.round(duration * fps));
-  const currentFrame = clamp(Math.round((video.currentTime || 0) * fps), 0, totalFrames);
+  const currentFrame = frameFromTime(video.currentTime || 0, fps, Math.max(0, totalFrames - 1));
   return { source, fps, duration, totalFrames, currentFrame };
 }
 
@@ -88,12 +89,12 @@ function visibleFrames(state) {
 }
 
 function frameToTime(frame, state) {
-  return clamp(frame, 0, state.totalFrames) / state.fps;
+  return frameStartTime(clamp(frame, 0, state.totalFrames), state.fps);
 }
 
 function materialFrames(m, state) {
-  const inFrame = clamp(Math.round(m.in * state.fps), 0, state.totalFrames);
-  const outFrame = clamp(Math.round(m.out * state.fps), inFrame + 1, state.totalFrames + 1);
+  const inFrame = clamp(Math.round(m.in * state.fps), 0, Math.max(0, state.totalFrames - 1));
+  const outFrame = clamp(Math.round(m.out * state.fps), inFrame + 1, state.totalFrames);
   return { inFrame, outFrame };
 }
 
@@ -134,7 +135,7 @@ function drawCover(src, x, y, w, h) {
 
 function drawSlotBase(frame, state, slot, slotW, h, hasFrame) {
   const x = slot * slotW;
-  const inRange = frame >= 0 && frame <= state.totalFrames;
+  const inRange = frame >= 0 && frame < state.totalFrames;
 
   ctx.fillStyle = inRange ? '#07080b' : '#11141a';
   ctx.fillRect(x, 0, slotW, h);
@@ -152,7 +153,7 @@ function drawSlotBase(frame, state, slot, slotW, h, hasFrame) {
 function drawSlotOverlay(frame, state, slot, slotW, h) {
   const x = slot * slotW;
   const current = slot === RADIUS;
-  const inRange = frame >= 0 && frame <= state.totalFrames;
+  const inRange = frame >= 0 && frame < state.totalFrames;
 
   ctx.strokeStyle = current ? '#ffb648' : '#333a46';
   ctx.lineWidth = current ? 2 : 1;
@@ -252,7 +253,7 @@ async function ensureFrames(state, gen) {
 
   for (const frame of order) {
     if (gen !== generation) return;
-    if (frame < 0 || frame > state.totalFrames) continue;
+    if (frame < 0 || frame >= state.totalFrames) continue;
     const key = cacheKey(state.source, frame);
     if (cacheGet(key)) continue;
     try {
@@ -269,10 +270,8 @@ async function ensureFrames(state, gen) {
 function seekFrame(frame) {
   const state = activeState();
   if (!state) return;
-  const f = clamp(frame, 0, state.totalFrames);
-  try {
-    video.currentTime = f / state.fps;
-  } catch { /* ignore */ }
+  const f = clamp(frame, 0, Math.max(0, state.totalFrames - 1));
+  seekVideoFrame(video, f, state.fps, state.duration);
   scheduleRender();
 }
 
@@ -328,13 +327,13 @@ function onPointerMove(e) {
     gesture.started = true;
   }
 
-  const frame = clamp(frameAtClientX(e.clientX, state), 0, state.totalFrames);
+  const frame = clamp(frameAtClientX(e.clientX, state), 0, Math.max(0, state.totalFrames - 1));
   if (gesture.type === 'move') {
     let inFrame = frame - gesture.grabFrame;
     let outFrame = inFrame + gesture.length;
     if (inFrame < 0) { inFrame = 0; outFrame = gesture.length; }
-    if (outFrame > state.totalFrames + 1) {
-      outFrame = state.totalFrames + 1;
+    if (outFrame > state.totalFrames) {
+      outFrame = state.totalFrames;
       inFrame = Math.max(0, outFrame - gesture.length);
     }
     store.updateLive(() => {
@@ -349,7 +348,7 @@ function onPointerMove(e) {
       store.updateLive(() => { m.in = frameToTime(inFrame, state); });
       seekFrame(inFrame);
     } else {
-      const outFrame = clamp(frame + 1, cur.inFrame + 1, state.totalFrames + 1);
+      const outFrame = clamp(frame + 1, cur.inFrame + 1, state.totalFrames);
       store.updateLive(() => { m.out = frameToTime(outFrame, state); });
       seekFrame(outFrame - 1);
     }

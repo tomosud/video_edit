@@ -13,8 +13,8 @@ function frameBounds(item, source) {
   const fps = source.fps || 30;
   const duration = source.duration || 0;
   const maxFrame = duration ? Math.round(duration * fps) : Number.MAX_SAFE_INTEGER;
-  const inFrame = clamp(Math.round(item.in * fps), 0, maxFrame);
-  const outFrame = clamp(Math.round(item.out * fps), inFrame + 1, maxFrame + 1);
+  const inFrame = clamp(Math.round(item.in * fps), 0, Math.max(0, maxFrame - 1));
+  const outFrame = clamp(Math.round(item.out * fps), inFrame + 1, maxFrame);
   return { fps, inFrame, outFrame };
 }
 

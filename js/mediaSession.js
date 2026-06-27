@@ -1,6 +1,7 @@
 // mediaSession.js - shared Mediabunny frame sessions for preview-oriented exact frame reads
 import { ALL_FORMATS, BlobSource, CanvasSink, Input } from '../lib/mediabunny.min.js?v=20260627-nativepreview3';
 import { fileFor, freshFileFor } from './fileOpen.js?v=20260627-nativepreview3';
+import { frameProbeTime } from './util.js?v=20260627-nativepreview3';
 
 const sessions = new Map(); // key -> { file, input, ready, sink, chain }
 
@@ -67,7 +68,7 @@ export async function getVideoFrameCanvas(source, frame, fps, opts = {}) {
   const entry = await openFrameSession(source, opts);
   const job = entry.chain.catch(() => {}).then(async () => {
     const sink = await entry.ready;
-    const t = safeFrame / frameRate;
+    const t = frameProbeTime(safeFrame, frameRate, duration);
     const wrapped = await sink.getCanvas(t);
     if (!wrapped?.canvas) throw new Error(`フレームを取得できません: ${safeFrame}`);
     return cloneCanvas(wrapped.canvas);
@@ -80,4 +81,3 @@ export function disposeMediaSessions() {
   for (const entry of sessions.values()) disposeEntry(entry);
   sessions.clear();
 }
-

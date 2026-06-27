@@ -11,6 +11,28 @@ export function fmtDur(sec) {
   return sec.toFixed(1) + 's';
 }
 
+export function frameFromTime(time, fps, maxFrame = Number.MAX_SAFE_INTEGER) {
+  const rate = fps || 30;
+  const frame = Math.floor(Math.max(0, time || 0) * rate + 1e-6);
+  return Math.max(0, Math.min(maxFrame, frame));
+}
+
+export function frameStartTime(frame, fps) {
+  return Math.max(0, frame) / (fps || 30);
+}
+
+export function frameProbeTime(frame, fps, duration = 0) {
+  const rate = fps || 30;
+  const t = (Math.max(0, frame) + 0.5) / rate;
+  if (!duration || !Number.isFinite(duration)) return t;
+  return Math.max(0, Math.min(duration, t));
+}
+
+export function seekVideoFrame(video, frame, fps, duration = video?.duration || 0) {
+  if (!video) return;
+  try { video.currentTime = frameProbeTime(frame, fps, duration); } catch { /* ignore */ }
+}
+
 // Stable short hash (16 hex chars) used to key media-derived caches by file
 // identity (name+size) so thumbnails persist & match across sessions/re-imports.
 export async function hashKey(text) {
@@ -37,4 +59,15 @@ export function makeScrubber(video) {
     try { video.currentTime = t; } catch { /* ignore */ }
   };
   return (t) => { target = t; if (!raf) raf = requestAnimationFrame(tick); };
+}
+
+export function makeFrameScrubber(video, fpsOf, durationOf = () => video?.duration || 0) {
+  return makeScrubber({
+    get readyState() { return video?.readyState || 0; },
+    get seeking() { return video?.seeking || false; },
+    set currentTime(frame) {
+      const fps = typeof fpsOf === 'function' ? fpsOf() : fpsOf;
+      seekVideoFrame(video, frame, fps, durationOf());
+    },
+  });
 }

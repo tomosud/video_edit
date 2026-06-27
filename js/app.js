@@ -8,7 +8,7 @@ import * as frameStrip from './frameStrip.js?v=20260627-nativepreview3';
 import * as shelf from './materialShelf.js?v=20260627-nativepreview3';
 import * as outSeq from './outputSequence.js?v=20260627-nativepreview3';
 import { exportProject, downloadBlob } from './export.js?v=20260627-nativepreview3';
-import { fmtTime, makeScrubber } from './util.js?v=20260627-nativepreview3';
+import { fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js?v=20260627-nativepreview3';
 
 const $ = (id) => document.getElementById(id);
 const el = {};
@@ -151,6 +151,25 @@ function frameDurFor(sourceId) {
   return 1 / fps;
 }
 
+function activeFps() {
+  return store.activeSource()?.fps || 30;
+}
+
+function activeDuration() {
+  return store.activeSource()?.duration || el.srcVideo.duration || 0;
+}
+
+function frameOfTime(t, fps = activeFps(), duration = activeDuration()) {
+  const total = duration ? Math.max(0, Math.round(duration * fps) - 1) : Number.MAX_SAFE_INTEGER;
+  return frameFromTime(t, fps, total);
+}
+
+function probeTimeOf(t) {
+  const fps = activeFps();
+  const duration = activeDuration();
+  return frameProbeTime(frameOfTime(t, fps, duration), fps, duration);
+}
+
 function endGuard() {
   return Math.min(0.03, frameDur() * 0.75);
 }
@@ -175,19 +194,25 @@ function transportLoop() {
   // Sequential output playback takes priority over a source loop range.
   if (sequence) {
     const it = sequence.items[sequence.i];
-    if (it && !sequenceAdvancing && el.srcVideo.currentTime >= it.out - sequenceEndGuard(it)) advanceSequence();
+    if (it && !sequenceAdvancing) {
+      const fps = store.getSource(it.sourceId)?.fps || activeFps();
+      const outFrame = Math.round(it.out * fps);
+      if (el.srcVideo.currentTime >= outFrame / fps - sequenceEndGuard(it)) advanceSequence();
+    }
     return;
   }
 
   const r = store.ui.playRange;
   if (!r) return;
-  if (el.srcVideo.currentTime < r.end - endGuard()) return;
+  const fps = activeFps();
+  const outFrame = Math.round(r.end * fps);
+  if (el.srcVideo.currentTime < outFrame / fps - endGuard()) return;
 
   if (loopEnabled) {
-    el.srcVideo.currentTime = r.start;
+    seekVideoFrame(el.srcVideo, Math.round(r.start * fps), fps, activeDuration());
   } else {
     el.srcVideo.pause();
-    try { el.srcVideo.currentTime = Math.max(r.start, r.end - frameDur()); } catch { /* ignore */ }
+    seekVideoFrame(el.srcVideo, Math.max(Math.round(r.start * fps), outFrame - 1), fps, activeDuration());
   }
 }
 
@@ -246,6 +271,10 @@ function ensureSource(sourceId, cb) {
 }
 
 function seekTo(t, cb) {
+  const fps = activeFps();
+  const duration = activeDuration();
+  const targetFrame = frameOfTime(t, fps, duration);
+  const targetTime = frameProbeTime(targetFrame, fps, duration);
   if (el.srcVideo.readyState >= 1) {
     let done = false;
     const finish = () => {
@@ -257,10 +286,10 @@ function seekTo(t, cb) {
     if (cb) {
       el.srcVideo.addEventListener('seeked', finish);
       requestAnimationFrame(() => {
-        if (Math.abs(el.srcVideo.currentTime - t) < 1e-4 && !el.srcVideo.seeking) finish();
+        if (Math.abs(el.srcVideo.currentTime - targetTime) < 1e-4 && !el.srcVideo.seeking) finish();
       });
     }
-    try { el.srcVideo.currentTime = t; } catch { finish(); }
+    try { el.srcVideo.currentTime = targetTime; } catch { finish(); }
   } else {
     pendingSeek = t;
     if (cb) el.srcVideo.addEventListener('loadeddata', cb, { once: true });
@@ -284,14 +313,14 @@ function wireSeek() {
     dragging = true;
     try { bar.setPointerCapture(e.pointerId); } catch { /* ignore */ }
     stopSequence(); store.ui.playRange = null;
-    seekScrub(tAt(e.clientX)); updateSeek();
+    seekScrub(probeTimeOf(tAt(e.clientX))); updateSeek();
   });
-  bar.addEventListener('pointermove', (e) => { if (dragging) { seekScrub(tAt(e.clientX)); updateSeek(e.clientX); } });
+  bar.addEventListener('pointermove', (e) => { if (dragging) { seekScrub(probeTimeOf(tAt(e.clientX))); updateSeek(e.clientX); } });
   bar.addEventListener('pointerup', (e) => {
     if (!dragging) return;
     dragging = false;
     try { bar.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
-    try { el.srcVideo.currentTime = tAt(e.clientX); } catch { /* ignore */ }
+    seekTo(tAt(e.clientX));
   });
 
   el.srcVideo.addEventListener('timeupdate', () => { updateSeek(); updateFrameInfo(); });
@@ -324,8 +353,8 @@ function updateFrameInfo() {
   const fps = (src && src.fps) || 0;
   if (!fps || !el.srcVideo.duration) { el.frameInfo.textContent = '-'; return; }
   const frameDur = 1 / fps;
-  const frame = Math.round(el.srcVideo.currentTime * fps);
   const totalFrames = Math.round((el.srcVideo.duration || 0) * fps);
+  const frame = frameFromTime(el.srcVideo.currentTime, fps, Math.max(0, totalFrames - 1));
   el.frameInfo.textContent = fps + 'fps - 1 frame ' + frameDur.toFixed(3) + 's - #' + frame + '/' + totalFrames;
 }
 
@@ -603,10 +632,10 @@ function bindVideo(ui) {
     el.srcVideo.src = url;
     el.srcEmpty.hidden = true;
     el.srcVideo.onloadedmetadata = () => {
-      if (pendingSeek != null) { el.srcVideo.currentTime = pendingSeek; pendingSeek = null; }
+      if (pendingSeek != null) { seekTo(pendingSeek); pendingSeek = null; }
     };
   } else if (url && pendingSeek != null && el.srcVideo.readyState >= 1) {
-    el.srcVideo.currentTime = pendingSeek; pendingSeek = null;
+    seekTo(pendingSeek); pendingSeek = null;
   } else if (!url) {
     if (activeUrl || el.srcVideo.getAttribute('src')) {
       activeUrl = null;

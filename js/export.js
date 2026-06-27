@@ -28,8 +28,8 @@ function clipBounds(project, material, outputFps) {
   const sourceFps = src?.fps || outputFps || 30;
   const duration = src?.duration || 0;
   const maxFrame = duration ? Math.round(duration * sourceFps) : Number.MAX_SAFE_INTEGER;
-  const inFrame = clamp(Math.round(material.in * sourceFps), 0, maxFrame);
-  const outFrame = clamp(Math.round(material.out * sourceFps), inFrame + 1, maxFrame + 1);
+  const inFrame = clamp(Math.round(material.in * sourceFps), 0, Math.max(0, maxFrame - 1));
+  const outFrame = clamp(Math.round(material.out * sourceFps), inFrame + 1, maxFrame);
   const frameCount = Math.max(1, Math.round((outFrame / sourceFps - inFrame / sourceFps) * outputFps));
   return { sourceFps, inFrame, outFrame, inTime: inFrame / sourceFps, outTime: outFrame / sourceFps, frameCount };
 }

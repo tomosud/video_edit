@@ -1,7 +1,7 @@
 // sourceTimeline.js — zoomable, multi-clip source timeline
 import { store, uid } from './store.js?v=20260627-nativepreview3';
 import { generateWindow, spacing } from './thumbnails.js?v=20260627-nativepreview3';
-import { fmtTime, makeScrubber } from './util.js?v=20260627-nativepreview3';
+import { fmtTime, frameFromTime, frameStartTime, makeFrameScrubber, seekVideoFrame } from './util.js?v=20260627-nativepreview3';
 
 const FOCUS_MARGIN = 0.3;        // extra view beyond a selected clip (fraction of clip len)
 const REGEN_DEBOUNCE = 140;
@@ -19,7 +19,7 @@ let playRaf = 0;                 // rAF id for smooth playhead while playing
 export function init(elements, videoEl) {
   els = elements;
   video = videoEl;
-  scrub = makeScrubber(video);
+  scrub = makeFrameScrubber(video, () => fps, () => duration);
 
   els.scroll.addEventListener('wheel', onWheel, { passive: false });
   els.inner.addEventListener('pointerdown', onInnerDown);
@@ -54,6 +54,9 @@ const clampT = (t) => Math.max(0, Math.min(duration, t));
 const snapT = (t) => clampT(Math.round(t * fps) / fps);
 const frameDur = () => 1 / fps;
 const outPreviewT = (m) => clampT(Math.max(m.in, m.out - frameDur()));
+const frameOf = (t) => frameFromTime(t, fps, Math.max(0, Math.round(duration * fps) - 1));
+const previewAt = (t) => scrub(frameOf(t));
+const seekPreviewAt = (t) => seekVideoFrame(video, frameOf(t), fps, duration);
 
 // ---------- state sync ----------
 function onState(project, ui) {
@@ -165,7 +168,7 @@ function onPointerMove(e) {
     let nout = nin + len;
     if (nout > duration) { nout = duration; nin = duration - len; }
     store.updateLive(() => { m.in = nin; m.out = nout; });
-    scrub(nin);                       // follow the clip's IN edge while moving
+    previewAt(nin);                   // follow the clip's IN edge while moving
     layout();
   } else if (gesture.type === 'resize') {
     const t = snapT(xToTime(e.clientX));
@@ -173,7 +176,7 @@ function onPointerMove(e) {
       if (gesture.edge === 'in') m.in = Math.min(t, m.out - 1 / fps);
       else m.out = Math.max(t, m.in + 1 / fps);
     });
-    scrub(gesture.edge === 'in' ? m.in : outPreviewT(m));   // OUT shows the last in-range frame
+    previewAt(gesture.edge === 'in' ? m.in : outPreviewT(m));   // OUT shows the last in-range frame
     layout();
   }
 }
@@ -183,7 +186,7 @@ function onPointerUp(e) {
     playheadDrag = false;
     try { els.playhead.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     const t = snapT(xToTime(e.clientX));
-    if (video.readyState >= 1) { try { video.currentTime = t; } catch { /* ignore */ } }
+    if (video.readyState >= 1) seekPreviewAt(t);
     return;
   }
   if (ovDrag) {
@@ -196,7 +199,7 @@ function onPointerUp(e) {
   if (gesture && gesture.type === 'resize' && gesture.started) {
     const m = store.getMaterial(gesture.id);
     if (m && video.readyState >= 1) {
-      try { video.currentTime = gesture.edge === 'in' ? m.in : outPreviewT(m); } catch { /* ignore */ }
+      seekPreviewAt(gesture.edge === 'in' ? m.in : outPreviewT(m));
     }
   }
   gesture = null;
@@ -204,8 +207,8 @@ function onPointerUp(e) {
 
 function seekFromClientX(clientX) {
   const t = snapT(xToTime(clientX));
-  scrub(t);
-  positionPlayhead(t);
+  previewAt(t);
+  positionPlayhead(frameStartTime(frameOf(t), fps));
 }
 
 // double-click on empty area -> create a clip one displayed-frame (cell) wide.
@@ -312,7 +315,7 @@ function renderBands() {
 
 function positionPlayhead(t) {
   if (!video) return;
-  const cur = t ?? video.currentTime;
+  const cur = t ?? frameStartTime(frameFromTime(video.currentTime, fps), fps);
   const x = timeToX(cur);
   els.playhead.style.left = x + 'px';
   els.playhead.style.display = (x < 0 || x > innerW()) ? 'none' : 'block';
