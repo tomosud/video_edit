@@ -1,17 +1,53 @@
 // fileOpen.js — manage source media: pick files, runtime URL registry, re-link
-import { store, uid } from './store.js';
-import * as db from './db.js';
-import { hashKey } from './util.js';
-import { readMediaInfo } from './mediaInfo.js';
+import { store, uid } from './store.js?v=20260627-nativepreview3';
+import * as db from './db.js?v=20260627-nativepreview3';
+import * as projectStore from './projectStore.js?v=20260627-nativepreview3';
+import { hashKey } from './util.js?v=20260627-nativepreview3';
+import { readMediaInfo } from './mediaInfo.js?v=20260627-nativepreview3';
 
 // runtime registry: sourceId -> { file, url, handle }
 const media = new Map();
 let addVideoInFlight = null;
-const handleKeyOf = (sourceId) => 'source:' + sourceId + ':handle';
+const handleKeyOf = (sourceId) => projectStore.sourceHandleKey(sourceId);
 
 export function urlFor(sourceId) { return media.get(sourceId)?.url || null; }
 export function fileFor(sourceId) { return media.get(sourceId)?.file || null; }
 export function isLinked(sourceId) { return media.has(sourceId); }
+
+async function readPermission(handle) {
+  if (!handle?.queryPermission) return 'prompt';
+  try {
+    return await handle.queryPermission({ mode: 'read' });
+  } catch {
+    return 'prompt';
+  }
+}
+
+async function requestReadPermission(handle) {
+  if (!handle?.requestPermission) return 'prompt';
+  try {
+    return await handle.requestPermission({ mode: 'read' });
+  } catch {
+    return 'denied';
+  }
+}
+
+async function fileFromStoredHandle(source, { requestPermission = false } = {}) {
+  const handle = await db.loadHandle(source.handleKey || source.access?.handleKey || handleKeyOf(source.id));
+  if (!handle) return null;
+
+  let permission = await readPermission(handle);
+  if (permission !== 'granted' && requestPermission) {
+    permission = await requestReadPermission(handle);
+  }
+  if (permission !== 'granted') return null;
+
+  try {
+    return { file: await handle.getFile(), handle };
+  } catch {
+    return null;
+  }
+}
 
 // Get a FRESH File for reading (export). A File captured earlier can go stale
 // ("File could not be read! Code=-1") once the OS/handle invalidates it, so
@@ -128,7 +164,12 @@ async function addVideoImpl() {
     s.mediaKey === mediaKey || (s.fileName === file.name && s.size === file.size));
   if (existing) {
     register(existing.id, file, handle);
-    if (handle) db.saveHandle(handleKeyOf(existing.id), handle).catch(() => {});
+    const handleKey = handleKeyOf(existing.id);
+    if (handle) db.saveHandle(handleKey, handle).catch(() => {});
+    store.update((p) => {
+      const t = p.sources.find(s => s.id === existing.id);
+      if (t) t.handleKey = handleKey;
+    }, { commit: false });
     store.setUI({ activeSourceId: existing.id });
     return existing.id;
   }
@@ -176,21 +217,12 @@ function pickWithInput() {
 }
 
 // After opening a project, try to re-link sources from their original file handles.
-export async function relinkAll() {
+export async function relinkAll({ requestPermission = false } = {}) {
   const missing = [];
   for (const s of store.get().sources) {
     if (media.has(s.id)) continue;
-    let file = null;
-    const handle = await db.loadHandle(s.handleKey || handleKeyOf(s.id));
-    if (handle) {
-      try {
-        const perm = await handle.queryPermission({ mode: 'read' });
-        if (perm === 'granted' || (await handle.requestPermission({ mode: 'read' })) === 'granted') {
-          file = await handle.getFile();
-        }
-      } catch { /* fall through */ }
-    }
-    if (file) register(s.id, file, handle);
+    const linked = await fileFromStoredHandle(s, { requestPermission });
+    if (linked) register(s.id, linked.file, linked.handle);
     else missing.push(s);
   }
   // backfill missing metadata now that media is linked

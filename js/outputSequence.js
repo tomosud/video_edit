@@ -1,7 +1,7 @@
 // outputSequence.js — output clips (editing place): drop, reorder, select, play
-import { store, uid } from './store.js';
-import { cardThumb, cloneCanvas } from './thumbnails.js';
-import { fmtDur } from './util.js';
+import { store, uid } from './store.js?v=20260627-nativepreview3';
+import { cardThumb, cloneCanvas } from './thumbnails.js?v=20260627-nativepreview3';
+import { fmtDur } from './util.js?v=20260627-nativepreview3';
 
 let listEl, totalEl;
 let onPlay = () => {};

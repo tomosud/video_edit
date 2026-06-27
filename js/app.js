@@ -1,21 +1,22 @@
-// app.js — entry: wire modules, selection side-effects, ranged playback, persistence
-import { store } from './store.js';
-import * as projectStore from './projectStore.js';
-import * as fileOpen from './fileOpen.js';
-import * as cropPreview from './cropPreview.js';
-import * as srcTimeline from './sourceTimeline.js';
-import * as shelf from './materialShelf.js';
-import * as outSeq from './outputSequence.js';
-import { exportProject, downloadBlob } from './export.js';
-import { fmtTime, makeScrubber } from './util.js';
+﻿// app.js - entry: wire modules, selection side-effects, ranged playback, persistence
+import { store } from './store.js?v=20260627-nativepreview3';
+import * as projectStore from './projectStore.js?v=20260627-nativepreview3';
+import * as fileOpen from './fileOpen.js?v=20260627-nativepreview3';
+import * as cropPreview from './cropPreview.js?v=20260627-nativepreview3';
+import * as srcTimeline from './sourceTimeline.js?v=20260627-nativepreview3';
+import * as frameStrip from './frameStrip.js?v=20260627-nativepreview3';
+import * as shelf from './materialShelf.js?v=20260627-nativepreview3';
+import * as outSeq from './outputSequence.js?v=20260627-nativepreview3';
+import { exportProject, downloadBlob } from './export.js?v=20260627-nativepreview3';
+import { fmtTime, makeScrubber } from './util.js?v=20260627-nativepreview3';
 
 const $ = (id) => document.getElementById(id);
 const el = {};
-['btnNewProject','btnOpenProject','btnAddVideo','sourceSelect','btnUndo','btnRedo',
+['btnNewProject','btnOpenProject','btnAddVideo','sourceSelect','btnRelinkMissing','btnUndo','btnRedo',
  'btnExport','status','srcVideo','srcEmpty','origTime','btnPlay','btnLoop','vertCanvas',
  'panX','panY','zoom','bgBlur','overlay','overlayMsg','overlayProg',
  'confirm','confirmTitle','confirmMsg','confirmOk','confirmCancel',
- 'tlScroll','tlInner','thumbRow','clipBands','tlPlayhead','srcRange',
+ 'tlScroll','tlInner','thumbRow','clipBands','tlPlayhead','frameStrip','srcRange',
  'tlOverview','ovClips','ovWindow','ovPlayhead',
  'seekBar','seekMarks','seekRange','seekFill','seekHead','frameInfo',
  'shelf','shelfCount','outList','totalDur','btnPlayOut','btnStopOut'].forEach(id => el[id] = $(id));
@@ -25,10 +26,11 @@ let activeUrl = null;
 let pendingSeek = null;
 let lastSelKey = '';
 let loopEnabled = true;
-let sequence = null;   // { items:[{sourceId,in,out}], i } during 連続再生
+let sequence = null;
 let transportRaf = 0;
 let projectSaveTimer = 0;
 let sequenceAdvancing = false;
+let missingSources = [];
 
 function init() {
   cropPreview.init(el.vertCanvas, el.srcVideo);
@@ -37,6 +39,7 @@ function init() {
     bands: el.clipBands, playhead: el.tlPlayhead, range: el.srcRange,
     overview: el.tlOverview, ovClips: el.ovClips, ovWindow: el.ovWindow, ovPlayhead: el.ovPlayhead,
   }, el.srcVideo);
+  frameStrip.init(el.frameStrip, el.srcVideo);
   shelf.init({ shelf: el.shelf, count: el.shelfCount }, { play: playRange });
   outSeq.init({ list: el.outList, total: el.totalDur }, { play: playRange });
   srcTimeline.onPlayRange(playRange);
@@ -53,10 +56,15 @@ async function bootstrap() {
     if (re) {
       projectOpen = true;
       if (re.project) store.load(re.project);
-      await fileOpen.relinkAll();
+      store.loadHistoryState(await projectStore.loadHistory());
+      setMissingSources(await fileOpen.relinkAll());
+      refreshStateViews();
     }
   } catch { /* ignore */ }
-  if (!projectOpen) await store.restore();
+  if (!projectOpen && await store.restore()) {
+    setMissingSources(await fileOpen.relinkAll());
+    refreshStateViews();
+  }
   updateChrome();
 }
 
@@ -65,6 +73,8 @@ function wireMenu() {
   el.btnNewProject.onclick = guard(async () => {
     const name = await projectStore.newProject();
     projectOpen = true; store.load({ name });
+    setMissingSources([]);
+    updateChrome();
     setStatus('新規プロジェクト: ' + name);
   });
   el.btnOpenProject.onclick = guard(async () => {
@@ -72,14 +82,29 @@ function wireMenu() {
     projectOpen = true;
     if (project) {
       store.load(project);
-      const missing = await fileOpen.relinkAll();
-      setStatus(missing.length ? `${name}（未リンク ${missing.length}）` : '開いた: ' + name);
-    } else { store.load({ name }); setStatus('空フォルダ→新規: ' + name); }
+      store.loadHistoryState(await projectStore.loadHistory());
+      const missing = await fileOpen.relinkAll({ requestPermission: true });
+      setMissingSources(missing);
+      refreshStateViews();
+      setStatus(missing.length ? name + ' 未リンク: ' + missing.length : '開いた: ' + name);
+    } else { store.load({ name }); setMissingSources([]); updateChrome(); setStatus('空フォルダを新規プロジェクトとして開きました: ' + name); }
   });
   el.btnAddVideo.onclick = guard(async () => {
     el.btnAddVideo.disabled = true;
-    try { await fileOpen.addVideo(); }
+    try {
+      await fileOpen.addVideo();
+      refreshMissingSources();
+    }
     finally { updateChrome(); }
+  });
+  el.btnRelinkMissing.onclick = guard(async () => {
+    el.btnRelinkMissing.disabled = true;
+    const missing = await fileOpen.relinkAll({ requestPermission: true });
+    setMissingSources(missing);
+    refreshStateViews();
+    setStatus(missing.length
+      ? 'まだ復元できない動画があります: ' + missing.length
+      : '動画アクセスを復元しました');
   });
   el.btnUndo.onclick = () => store.undo();
   el.btnRedo.onclick = () => store.redo();
@@ -89,15 +114,19 @@ function wireMenu() {
 
 // ---------- transport / ranged playback ----------
 function wireTransport() {
-  el.btnPlay.onclick = () => { if (el.srcVideo.paused) el.srcVideo.play(); else el.srcVideo.pause(); };
+  el.btnPlay.onclick = () => {
+    stopSequence();
+    if (el.srcVideo.paused) el.srcVideo.play();
+    else el.srcVideo.pause();
+  };
   el.btnLoop.onclick = () => { loopEnabled = !loopEnabled; el.btnLoop.style.color = loopEnabled ? 'var(--accent)' : ''; };
-  el.srcVideo.addEventListener('play', () => el.btnPlay.textContent = '⏸');
-  el.srcVideo.addEventListener('pause', () => el.btnPlay.textContent = '▶');
+  el.srcVideo.addEventListener('play', () => el.btnPlay.textContent = 'Pause');
+  el.srcVideo.addEventListener('pause', () => el.btnPlay.textContent = 'Play');
   el.srcVideo.addEventListener('play', startTransportMonitor);
   el.srcVideo.addEventListener('pause', stopTransportMonitor);
   el.srcVideo.addEventListener('ended', stopTransportMonitor);
   el.srcVideo.addEventListener('timeupdate', () => {
-    el.origTime.textContent = `${fmtTime(el.srcVideo.currentTime)} / ${fmtTime(el.srcVideo.duration)}`;
+    el.origTime.textContent = fmtTime(el.srcVideo.currentTime) + ' / ' + fmtTime(el.srcVideo.duration);
   });
   el.btnLoop.style.color = 'var(--accent)';
 
@@ -117,8 +146,17 @@ function frameDur() {
   return 1 / fps;
 }
 
+function frameDurFor(sourceId) {
+  const fps = store.getSource(sourceId)?.fps || store.activeSource()?.fps || 30;
+  return 1 / fps;
+}
+
 function endGuard() {
   return Math.min(0.03, frameDur() * 0.75);
+}
+
+function sequenceEndGuard(item) {
+  return Math.min(0.08, frameDurFor(item?.sourceId) * 1.15);
 }
 
 function startTransportMonitor() {
@@ -137,7 +175,7 @@ function transportLoop() {
   // Sequential output playback takes priority over a source loop range.
   if (sequence) {
     const it = sequence.items[sequence.i];
-    if (it && !sequenceAdvancing && el.srcVideo.currentTime >= it.out - endGuard()) advanceSequence();
+    if (it && !sequenceAdvancing && el.srcVideo.currentTime >= it.out - sequenceEndGuard(it)) advanceSequence();
     return;
   }
 
@@ -158,11 +196,17 @@ function playOutputs() {
   const p = store.get();
   const items = p.outputs.map(o => {
     const m = store.getMaterial(o.materialId);
-    return m ? { outputId: o.id, materialId: m.id, sourceId: m.sourceId, in: m.in, out: m.out } : null;
+    return m ? {
+      outputId: o.id,
+      materialId: m.id,
+      sourceId: m.sourceId,
+      in: m.in,
+      out: m.out,
+    } : null;
   }).filter(Boolean);
   if (!items.length) return;
   store.ui.playRange = null;
-  sequence = { items, i: 0 };
+  sequence = { items, i: 0, mode: 'native' };
   sequenceAdvancing = false;
   el.btnStopOut.disabled = false;
   playSequenceItem();
@@ -278,11 +322,11 @@ function updateSeek(overrideX) {
 function updateFrameInfo() {
   const src = store.activeSource();
   const fps = (src && src.fps) || 0;
-  if (!fps || !el.srcVideo.duration) { el.frameInfo.textContent = '—'; return; }
+  if (!fps || !el.srcVideo.duration) { el.frameInfo.textContent = '-'; return; }
   const frameDur = 1 / fps;
   const frame = Math.round(el.srcVideo.currentTime * fps);
   const totalFrames = Math.round((el.srcVideo.duration || 0) * fps);
-  el.frameInfo.textContent = `${fps}fps · 1コマ ${frameDur.toFixed(3)}s · #${frame}/${totalFrames}`;
+  el.frameInfo.textContent = fps + 'fps - 1 frame ' + frameDur.toFixed(3) + 's - #' + frame + '/' + totalFrames;
 }
 
 function renderSeekDecor() {
@@ -292,7 +336,7 @@ function renderSeekDecor() {
   const mats = store.get().materials.filter(m => m.sourceId === sid);
   el.seekMarks.innerHTML = mats.map(m => {
     const l = m.in / d * 100, w = Math.max(0.3, (m.out - m.in) / d * 100);
-    return `<span style="left:${l}%;width:${w}%"></span>`;
+    return '<span style="left:' + l + '%;width:' + w + '%"></span>';
   }).join('');
   const r = store.ui.playRange;
   if (r) {
@@ -367,43 +411,114 @@ async function deleteSelected() {
   if (!sel.kind) { setStatus('削除対象が選択されていません'); return; }
 
   if (sel.kind === 'output') {
-    // deleting an output removes only this instance; the cutout material stays
-    if (await askConfirm('この出力クリップを削除しますか？\n（元の切り出し素材はそのまま残ります）')) {
+    if (await askConfirm('この出力クリップを削除しますか？')) {
       outSeq.deleteOutput(sel.id);
       setStatus('出力クリップを削除しました');
     }
   } else if (sel.kind === 'material') {
-    // deleting a material also removes every output built from it
     const deps = store.get().outputs.filter(o => o.materialId === sel.id).length;
     const msg = deps
-      ? `この切り出し素材を削除しますか？\nこの素材を使う出力クリップ ${deps} 個も一緒に削除されます。`
-      : 'この切り出し素材を削除しますか？';
+      ? 'この素材を削除しますか？ この素材を使う出力クリップ ' + deps + ' 個も削除されます。'
+      : 'この素材を削除しますか？';
     if (await askConfirm(msg)) {
       shelf.deleteMaterial(sel.id);
-      setStatus('切り出し素材を削除しました');
+      setStatus('素材を削除しました');
     }
   }
 }
 
 // ---------- export ----------
 async function doExport() {
-  showOverlay('書き出し準備中…');
+  const settings = prepareExportSettings();
+  if (!settings) return;
+  showOverlay('書き出し準備中...');
   try {
     const blob = await exportProject({
       onStatus: (m) => el.overlayMsg.textContent = m,
       onProgress: (p) => el.overlayProg.value = Math.round((p || 0) * 100),
       onLog: (m) => console.debug('[ffmpeg]', m),
     });
-    downloadBlob(blob, (store.get().name || 'viralcut') + '.mp4');
-    setStatus('書き出し完了');
+    const fileName = settings.fileName;
+    if (projectStore.dirHandle()) await projectStore.saveOutputBlob(blob, fileName);
+    else downloadBlob(blob, fileName);
+    setStatus('書き出し完了: ' + fileName);
   } finally { hideOverlay(); }
+}
+
+function prepareExportSettings() {
+  const p = store.get();
+  const items = p.outputs.map(o => {
+    const m = p.materials.find(x => x.id === o.materialId);
+    return m ? { output: o, material: m, source: p.sources.find(s => s.id === m.sourceId) } : null;
+  }).filter(it => it?.source);
+  if (!items.length) return null;
+
+  const currentName = p.exportName || p.name || 'viralcut';
+  const requested = prompt('書き出しファイル名', stripMp4(currentName));
+  if (requested == null) return null;
+  const baseName = sanitizeFileName(stripMp4(requested)) || 'viralcut';
+  const fileName = baseName + '.mp4';
+
+  const sources = [...new Map(items.map(it => [it.source.id, it.source])).values()];
+  const fps = resolveExportFps(sources, p.output.fps || 30);
+  if (!fps) return null;
+  const size = resolveExportSize(sources, p.output);
+
+  store.update((project) => {
+    project.exportName = baseName;
+    project.output = { ...project.output, width: size.width, height: size.height, fps };
+  }, { commit: false });
+
+  return { fileName, fps, ...size };
+}
+
+function resolveExportFps(sources, fallback) {
+  const values = sources.map(s => Number(s.fps || 0)).filter(v => Number.isFinite(v) && v > 0);
+  if (!values.length) return fallback || 30;
+  const unique = [];
+  for (const fps of values) {
+    if (!unique.some(v => Math.abs(v - fps) < 0.01)) unique.push(fps);
+  }
+  if (unique.length === 1) return unique[0];
+
+  const picked = prompt(
+    ['ソースのフレームレートが一致しません。', '使用するFPSを入力してください。', '候補: ' + unique.map(v => Number(v.toFixed(3))).join(', ')].join('\n'),
+    String(fallback || unique[0]),
+  );
+  if (picked == null) return null;
+  const fps = Number(picked);
+  if (!Number.isFinite(fps) || fps <= 0) {
+    alert('FPS は正の数値で入力してください');
+    return null;
+  }
+  return fps;
+}
+
+function resolveExportSize(sources, output) {
+  const aspect = (output?.width || 1080) / (output?.height || 1920);
+  const maxSourceLong = Math.max(0, ...sources.map(s => Math.max(Number(s.width) || 0, Number(s.height) || 0)));
+  const longEdge = Math.min(1080, maxSourceLong || 1080);
+  if (aspect >= 1) return { width: even(longEdge), height: even(longEdge / aspect) };
+  return { width: even(longEdge * aspect), height: even(longEdge) };
+}
+
+function stripMp4(name) {
+  return String(name || '').replace(/\.mp4$/i, '');
+}
+
+function sanitizeFileName(name) {
+  return String(name || '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim();
+}
+
+function even(v) {
+  return Math.max(2, Math.round(v / 2) * 2);
 }
 
 // ---------- state -> UI ----------
 function onState(project, ui) {
   // source dropdown
   const opts = project.sources.map(s =>
-    `<option value="${s.id}"${s.id === ui.activeSourceId ? ' selected' : ''}>${s.fileName}</option>`).join('');
+    '<option value="' + s.id + '"' + (s.id === ui.activeSourceId ? ' selected' : '') + '>' + s.fileName + '</option>').join('');
   if (el.sourceSelect.innerHTML !== opts) el.sourceSelect.innerHTML = opts;
 
   // selection side-effects (run once per selection change)
@@ -440,6 +555,7 @@ async function saveProjectNow() {
   projectSaveTimer = 0;
   try {
     const ts = await projectStore.save(store.get());
+    await projectStore.saveHistory(store.historyState());
     setStatus('自動保存 ' + new Date(ts).toLocaleTimeString());
   } catch (err) {
     console.warn('auto save failed', err);
@@ -467,6 +583,19 @@ function applySelection() {
   if (!fromTL && r.material) queueMicrotask(() => srcTimeline.focusMaterial(r.material));
 }
 
+function setMissingSources(sources) {
+  missingSources = sources || [];
+}
+
+function refreshMissingSources() {
+  missingSources = store.get().sources.filter(s => !fileOpen.isLinked(s.id));
+  return missingSources;
+}
+
+function refreshStateViews() {
+  store.setUI({ activeSourceId: store.ui.activeSourceId });
+}
+
 function bindVideo(ui) {
   const url = fileOpen.urlFor(ui.activeSourceId);
   if (url && url !== activeUrl) {
@@ -479,7 +608,13 @@ function bindVideo(ui) {
   } else if (url && pendingSeek != null && el.srcVideo.readyState >= 1) {
     el.srcVideo.currentTime = pendingSeek; pendingSeek = null;
   } else if (!url) {
-    el.srcEmpty.hidden = ui.activeSourceId != null;
+    if (activeUrl || el.srcVideo.getAttribute('src')) {
+      activeUrl = null;
+      el.srcVideo.removeAttribute('src');
+      try { el.srcVideo.load(); } catch { /* ignore */ }
+    }
+    el.srcEmpty.textContent = ui.activeSourceId ? '動画アクセスを復元してください' : '動画を追加してください';
+    el.srcEmpty.hidden = false;
   }
 }
 
@@ -487,6 +622,8 @@ function updateChrome() {
   const p = store.get();
   el.btnAddVideo.disabled = !projectOpen;
   el.sourceSelect.disabled = !p.sources.length;
+  el.btnRelinkMissing.hidden = !missingSources.length;
+  el.btnRelinkMissing.disabled = !missingSources.length;
   el.btnExport.disabled = !p.outputs.length;
   el.btnPlayOut.disabled = !p.outputs.length;
   el.btnUndo.disabled = !store.canUndo();

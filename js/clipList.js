@@ -1,7 +1,7 @@
 // clipList.js — output clip cards: add, select, delete, drag-reorder
-import { store, uid } from './store.js';
-import { singleThumb } from './thumbnails.js';
-import { fmtDur } from './util.js';
+import { store, uid } from './store.js?v=20260627-nativepreview3';
+import { singleThumb } from './thumbnails.js?v=20260627-nativepreview3';
+import { fmtDur } from './util.js?v=20260627-nativepreview3';
 
 let listEl, totalEl;
 const thumbCache = new Map(); // clipId -> dataURL

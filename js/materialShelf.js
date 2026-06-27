@@ -1,7 +1,7 @@
 // materialShelf.js — cutout material cards: select, dbl-click play, drag to output
-import { store } from './store.js';
-import { cardThumb, cloneCanvas } from './thumbnails.js';
-import { fmtDur } from './util.js';
+import { store } from './store.js?v=20260627-nativepreview3';
+import { cardThumb, cloneCanvas } from './thumbnails.js?v=20260627-nativepreview3';
+import { fmtDur } from './util.js?v=20260627-nativepreview3';
 
 let shelfEl, countEl;
 let onPlay = () => {};

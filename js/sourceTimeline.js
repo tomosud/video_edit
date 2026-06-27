@@ -1,7 +1,7 @@
 // sourceTimeline.js — zoomable, multi-clip source timeline
-import { store, uid } from './store.js';
-import { generateWindow, spacing } from './thumbnails.js';
-import { fmtTime, makeScrubber } from './util.js';
+import { store, uid } from './store.js?v=20260627-nativepreview3';
+import { generateWindow, spacing } from './thumbnails.js?v=20260627-nativepreview3';
+import { fmtTime, makeScrubber } from './util.js?v=20260627-nativepreview3';
 
 const FOCUS_MARGIN = 0.3;        // extra view beyond a selected clip (fraction of clip len)
 const REGEN_DEBOUNCE = 140;

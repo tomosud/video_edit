@@ -1,6 +1,6 @@
 // trimTimeline.js — source strip: IN/OUT handles, playhead, zoom, click-to-seek
-import { store } from './store.js';
-import { generateStrip } from './thumbnails.js';
+import { store } from './store.js?v=20260627-nativepreview3';
+import { generateStrip } from './thumbnails.js?v=20260627-nativepreview3';
 
 let els, video;
 let duration = 0;

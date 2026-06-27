@@ -1,488 +1,166 @@
 # Mediabunny 全面改修計画
 
-作成日: 2026-06-26
+作成日: 2026-06-26  
+更新日: 2026-06-27
 
 ## 目的
 
-現行の `video_edit` を、`C:\work\script\RamPlayer_web` の Mediabunny / WebCodecs ベース実装を参考に全面改修する。
+`C:\work\script\RamPlayer_web` の実装を参考に、`video_edit` を Mediabunny / WebCodecs ベースへ寄せる。方針は次の通り。
 
-主な方針は次の通り。
+- 動画ファイルはプロジェクト配下へコピーしない。元ファイルの `FileSystemFileHandle` から読み直す。
+- サムネイルはファイルとして保存しない。Mediabunny `CanvasSink` で必要時にメモリ上へ作成する。
+- 書き出しは `<video>` 再生、`canvas.captureStream()`、`MediaRecorder` に依存しない。Mediabunny `Output` / `CanvasSource` / `AudioSampleSource` で確定フレームを書き出す。
+- プレビューも可能な範囲から Mediabunny の exact frame 描画へ移す。特に出力クリップ連続再生は書き出しと同じ `[in, out)` 境界で扱う。
+- 旧プロジェクト互換は不要。現在のデータ形式を優先して単純化する。
 
-- 動画ファイルをプロジェクト配下の `media/` にコピーしない。
-- 読み込みはユーザーが選択した元ファイルを `FileSystemFileHandle` から再取得し、Mediabunny の `BlobSource(File)` に渡す。
-- サムネイルを `cache/frames/...jpg` としてファイル保存しない。
-- サムネイルは Mediabunny の `CanvasSink` / `EncodedPacketSink` で高速に生成し、`HTMLCanvasElement` をメモリ上の LRU キャッシュで管理する。
-- 動画書き出しは `<video>` の実時間再生や `MediaRecorder` に頼らず、Mediabunny の `Conversion` / `Output` / `CanvasSource` / packet copy を主経路にする。
-- 現状のソースタイムラインの下に、現フレーム付近を毎フレームで見せる固定スケールの下段タイムラインを追加する。
-- 既存の素材棚、ソースタイムライン、出力シーケンス、クロップ編集は維持しつつ、動画 I/O とプレビュー処理を刷新する。
+## 現状棚卸し
 
-## 参照した情報
+| 領域 | 現状 | 判定 |
+| --- | --- | --- |
+| 作業フォルダ | 起動時に作業フォルダを選び、`.viralcut/project.json` と `.viralcut/history.json` を保存する。 | 完了 |
+| 元動画アクセス | `FileSystemFileHandle` を IndexedDB に保存し、プロジェクト JSON には `handleKey` / 権限情報を残す。 | 完了 |
+| 動画コピー廃止 | 新規追加で `media/` へコピーしない。元ファイルを読む。 | 完了 |
+| メタデータ | `mediaInfo.js` が Mediabunny `Input` / track stats を使う。 | 完了、ただし native fallback が残る |
+| Mediabunny session 共通化 | `mediaSession.js` を追加し、プレビューとサムネイルの exact frame 取得を共通化した。 | 一部完了 |
+| タイムラインサムネイル | `thumbnails.js` が `mediaSession.js` 経由の `CanvasSink` でメモリ生成する。ファイルキャッシュなし。 | 完了 |
+| 下段毎フレームライン | `frameStrip.js` で現在フレーム前後の exact frame と素材枠を表示し、編集できる。 | 完了 |
+| 書き出し映像 | `export.js` が Mediabunny `Output` + `CanvasSource` でフレーム単位に encode する。 | 完了 |
+| 書き出し音声 | `AudioSampleSink` / `AudioSampleSource` で素材音声を範囲トリムして連結する。 | 完了 |
+| 書き出し設定 | ファイル名保持、FPS 選択、単一ソース FPS 継承、長辺 1080 上限の解像度決定。 | 完了 |
+| 通常プレビュー | `<video id="srcVideo">` の `currentTime` / `play()` に依存する。 | 未完 |
+| 出力連続プレビュー | 通常の連続再生は音声とリアルタイム性を優先して native video 経路を使う。Mediabunny exact frame preview は検証用候補として残す。 | 一部完了 |
+| クロッププレビュー | `<video>` と外部 canvas frame の両方を同じ crop 計算で描画できる。通常ソース再生はまだ `<video>`。 | 一部完了 |
+| 上段タイムライン操作 | seek / playhead は `<video>.currentTime` に依存する。 | 未完 |
+| native fallback | `fileOpen.js` に `<video>` metadata / fps fallback が残る。 | 要整理 |
+| Object URL | プレビュー `<video>` 用に `URL.createObjectURL()` が残る。 | `<video>` 廃止まで必要 |
 
-- `C:\work\script\RamPlayer_web`
-  - `src/player/Player.ts`: Mediabunny `Input`, `BlobSource`, `CanvasSink`, `AudioBufferSink`, `EncodedPacketSink` による再生、シーク、サムネイル生成。
-  - `src/player/Player.ts`: `stepFrames`, `scheduleStepPrefetch()`, `stepStripFrames()` による現フレーム周辺の毎フレームキャッシュ。
-  - `src/main.ts`: タイムラインサムネイルのメモリ LRU、生成キュー、再生/シーク中の生成停止。
-  - `src/main.ts`: `renderFilmstrip()` による 21 スロットの毎フレーム filmstrip 描画。
-  - `src/persist/restore.ts`: `FileSystemFileHandle` を IndexedDB に保存し、権限確認後に `getFile()` で元ファイルを再取得。
-  - `src/export/clipExport.ts`: Mediabunny `Conversion` と packet copy による MP4 書き出し。
-- Mediabunny 公式リポジトリ: https://github.com/Vanilagy/mediabunny
-  - ブラウザでの読み込み例は `new Input({ source: new BlobSource(file), formats: ALL_FORMATS })`。
-  - `RamPlayer_web` は `mediabunny@^1.49.0` を使用している。
-  - 読み書き、変換、WebCodecs ベースのデコード/エンコード、ストリーミング I/O が主要機能。
+## 重要な問題
 
-## 現状の課題
+### 出力連続プレビューの 1 フレーム混入
 
-### 動画ファイル管理
+書き出し結果には混入がないため、原因は export ではなくプレビュー側。現在の連続再生は `<video>` の実時間再生を rAF で監視し、`currentTime >= out - guard` になったら次素材へ切り替える方式。ブラウザのデコード・描画タイミング次第で `out` 以降のフレームが一瞬表示される。
 
-現在の `js/fileOpen.js` は、プロジェクトを開いている場合に `projectStore.copyIntoMedia(file)` で動画を `media/` にコピーし、`relPath` を保存している。
+対策:
 
-問題:
+- 出力シーケンス再生は `<video>.play()` ではなく Mediabunny `CanvasSink.getCanvas()` の exact frame で描画する。
+- フレーム範囲は書き出しと同じ `[inFrame, outFrame)` に揃える。
+- クロップ描画は export と同じ crop 計算を使う。
+- `<video>` は当面、元プレビューと上段タイムライン操作用に残すが、出力連続プレビューでは再生させない。
 
-- 大容量動画で初回追加が重い。
-- 元ファイルとコピーの二重管理になる。
-- `media/` 前提が `projectStore.findMedia()`、`.gitignore`、復元処理に広がっている。
-- ファイルの実体がコピー側に移るため、ユーザーが期待する「元ファイルを編集素材として使う」挙動ではない。
+## 全体設計
 
-### サムネイル
+### 1. Mediabunny Source Session を共通化する
 
-現在の `js/frameCache.js` は、メモリ LRU に加えて `cache/frames/<source>/<frame>.jpg` へ write-through している。
+現在は `thumbnails.js` と `export.js` がそれぞれ `Input` / `CanvasSink` を作っている。次の共通層を追加して、フレーム取得を一箇所へ寄せる。
 
-問題:
+- `js/mediaSession.js`
+  - `File` から `Input({ source: new BlobSource(file), formats: ALL_FORMATS })` を作る。
+  - `sourceId + file identity + sink option` 単位で `CanvasSink` を保持する。
+  - `getVideoFrameCanvas(source, frame, fps, options)` で exact frame を返す。
+  - `disposeMediaSessions()` でまとめて解放できる。
 
-- プロジェクトフォルダに大量の jpg が発生する。
-- ファイル I/O がタイムライン操作中の遅延要因になる。
-- キャッシュ破棄やバージョン管理が複雑。
-- `<video>` seek + `canvas.toBlob()` + object URL の流れが、Mediabunny の canvas 直接取得より遅くなりやすい。
+### 2. プレビューを段階的に Mediabunny 化する
 
-### メディア処理
+優先順:
 
-現在はプレビューに `<video>`、書き出しに `<video>` + `MediaRecorder` + ffmpeg.wasm fallback を使っている。
+1. 出力シーケンス連続再生を Mediabunny exact frame 描画へ変更する。
+2. 9:16 クロッププレビューを `<video>` と外部 canvas の両方から描けるようにする。
+3. ソースの一時停止中 seek を Mediabunny frame 描画へ寄せる。
+4. 通常再生も canvas player に置き換え、最後に `<video id="srcVideo">` と object URL を削る。
 
-問題:
+音声プレビューは映像のフレーム境界問題とは分離する。まず映像を確定させ、次に WebAudio + Mediabunny audio samples で追従させる。
 
-- 再生、サムネイル、書き出しで別々のデコード経路になっている。
-- フレーム精度と GOP/キーフレーム扱いが分散している。
-- 書き出し品質と対応形式が MediaRecorder/ブラウザ実装に強く依存する。
-- 書き出し速度が「再生できる速度」に縛られ、バックグラウンド/タブ非アクティブ時の挙動も不安定になりやすい。
-- `MediaRecorder` は狙った bitrate、frame rate、keyframe、MP4 構造を細かく制御しづらい。
+### 3. 書き出しは現在の方針を維持する
 
-## 設計方針
+現在の `export.js` は Mediabunny/WebCodecs ベースでよい。
 
-### 1. ビルド基盤を Vite + TypeScript に寄せる
+- 入力: 元ファイル handle から `freshFileFor()` で再取得。
+- 映像: `CanvasSink` で素材フレーム取得、合成 canvas を `CanvasSource` へ投入。
+- 音声: `AudioSampleSink.samples(in, out)` を trim し、`AudioSampleSource` へ timestamp を詰めて投入。
+- 境界: 素材は `[inFrame, outFrame)` として扱い、`outFrame - 1` が最後の表示フレーム。
 
-Mediabunny を npm dependency として使うため、現行の静的 ES modules 構成から Vite + TypeScript へ移行する。
+改善候補:
 
-予定:
+- `export.js` も `mediaSession.js` を使い、session 管理と dispose を共通化する。
+- 無加工単一 trim だけは将来 packet copy 最適化を検討する。ただし crop / 複数素材 / overlay がある通常経路では reencode が正しい。
 
-- `package.json`, `tsconfig.json`, `vite.config.ts` を追加。
-- 既存 `index.html`, `css/style.css`, `js/*.js` を段階的に `src/` へ移す。
-- 初期段階では UI/状態管理の構造を大きく変えず、メディア層だけ TypeScript 化する。
+### 4. native fallback を整理する
 
-理由:
+`fileOpen.js` の `<video>` metadata fallback は、Mediabunny 移行が安定したら削除する。削除後は decode 不可ファイルを明示エラーにし、ユーザーへ再エンコードや別形式を促す。
 
-- Mediabunny の型を使える。
-- RamPlayer の実装を移植しやすい。
-- バンドルと依存管理を明確にできる。
-
-### 2. SourceMedia 層を新設する
-
-`fileOpen.js` の責務を分割し、動画ソースごとに次の情報を管理する。
-
-保存する情報:
-
-- `id`
-- `fileName`
-- `size`
-- `lastModified`
-- `mediaKey`
-- `duration`
-- `fps`
-- `width`
-- `height`
-- `hasAudio`
-- `handleKey`
-
-保存しない情報:
-
-- `relPath`
-- `media/` 内コピー先
-- サムネイルキャッシュファイルパス
-
-ランタイム管理:
-
-- `sourceId -> FileSystemFileHandle | null`
-- `sourceId -> File | null`
-- `sourceId -> Mediabunny Input session`
-- `sourceId -> object URL` は当面 `<video>` 互換が残る箇所のみ一時的に利用し、最終的には削る。
-
-ブラウザでは任意の絶対パス文字列から直接読むことはできないため、「元パスから読む」は `FileSystemFileHandle` を保存し、必要時にユーザー権限を確認して `handle.getFile()` で元ファイルを再取得する形にする。ドラッグ&ドロップ時は `DataTransferItem.getAsFileSystemHandle()` が使える場合だけ handle を保持し、通常の file input ではセッション中の `File` のみ保持する。
-
-### 3. プロジェクト保存形式を更新する
-
-`project.version` を上げ、動画ソースの保存形式をコピー前提から handle 前提に移行する。
-
-保存ルール:
-
-- 新規追加では `media/` へコピーしない。
-- プロジェクト保存には `relPath` を書かない。
-- `.gitignore` から `media/` / `cache/` 前提を削除する。
-- 旧プロジェクトの `media/` コピー互換は持たない。
-
-IndexedDB:
-
-- 既存 `handles` store を使うか、`sourceHandles` store を追加する。
-- `source:<sourceId>:handle` のような用途が分かる key にする。
-- handle がない場合は、起動後に「再リンクが必要」状態として UI に出す。
-
-### 4. MediabunnySourceSession を導入する
-
-ソースごとに Mediabunny の読み込み状態をまとめるクラスを作る。
-
-責務:
-
-- `File` から `Input({ source: new BlobSource(file), formats: ALL_FORMATS })` を作る。
-- `canRead()`、primary video/audio track 取得。
-- duration, fps, width, height, rotation, audio 有無を解析。
-- `CanvasSink` を用途別に持つ。
-- `EncodedPacketSink` をキーフレームサムネイル/packet copy 用に持つ。
-- `dispose()` で Input と進行中 iterator を確実に解放する。
-
-想定 sink:
-
-- プレビュー/正確シーク用 `CanvasSink(videoTrack, { poolSize: 2, fit: 'contain' })`
-- サムネイル用 `CanvasSink(videoTrack, { poolSize: 1, width, height, fit: 'cover' })`
-- キーフレーム探索用 `EncodedPacketSink(videoTrack)`
-- 音声が必要な箇所は `AudioBufferSink(audioTrack)`
-
-### 5. サムネイル生成をメモリオンリーにする
-
-`js/frameCache.js` と `js/thumbnails.js` を置き換える。
-
-新設候補:
-
-- `src/media/thumbnailCache.ts`
-- `src/media/thumbnailScheduler.ts`
-- `src/timeline/sourceTimeline.ts`
-
-基本仕様:
-
-- キャッシュ値は object URL ではなく `HTMLCanvasElement`。
-- key は `sourceId + visibleSlotStart + visibleSlotEnd + exact/keyframe + dpr + thumbSize`。
-- LRU 上限は件数と推定メモリ量の両方で制御する。
-- 生成済み canvas をタイムライン canvas へ直接 `drawImage()` する。
-- `<img src=objectURL>` のセル DOM 群は廃止し、タイムライン全体を canvas 描画へ寄せる。
-
-RamPlayer から取り込む挙動:
-
-- 表示範囲に応じてサムネイル slot 数を制御する。
-- まず keyframe thumbnail を出して即時表示、余裕があるとき exact thumbnail で置き換える。
-- 再生中、シーク中、ドラッグ中はサムネイル生成を止める。
-- hover preview は近い既存サムネイルを先に表示し、後から exact を取得する。
-- サムネイル生成 queue は generation id でキャンセル可能にする。
-
-### 6. ソースタイムラインを canvas ベースへ寄せる
-
-現在の `sourceTimeline.js` は DOM の `thumbRow` と clip band を組み合わせている。サムネイル刷新に合わせ、少なくともサムネイル行は canvas 描画に変える。
-
-タイムラインは 2 段構成にする。
-
-- 上段: 現状のソースタイムライン。表示範囲をズーム/パンでき、素材範囲、clip band、playhead、overview を扱う。
-- 下段: 現フレーム付近の毎フレームタイムライン。ズーム状態に左右されず、常に現在フレームを中心に前後の実フレームを並べる。
-
-段階案:
-
-1. 既存 DOM タイムラインを維持し、`thumb-cell img` の代わりに canvas から `toDataURL` せず直接描画する overlay canvas を追加。
-2. 動作が安定したら clip band、overview、playhead も canvas へ統合する。
-3. フレーム単位ズーム時の境界合わせは現在の `FRAME_CELL_MIN_PX` 相当のロジックを canvas 上で再実装する。
-
-### 7. 下段の毎フレームタイムラインを追加する
-
-`RamPlayer_web` の filmstrip 実装を参考に、ソースタイムライン直下へ「現フレーム近傍の毎フレーム表示」を追加する。
-
-目的:
-
-- 上段タイムラインを広域表示やズーム操作に使いつつ、下段では常に現在位置の前後フレームを確認できるようにする。
-- IN/OUT や素材境界をフレーム単位で確認しやすくする。
-- ズームしなくても、現在フレーム、前後フレーム、キャッシュ済みフレームの状態が見えるようにする。
-
-UI 仕様:
-
-- 上段タイムラインの下に `frameStrip` 用 canvas を追加する。
-- 表示は奇数スロット構成にし、中央スロットを現在フレームにする。初期値は RamPlayer と同じく前後 10 フレーム、合計 21 スロットを基準にする。
-- 各スロットには実フレームのサムネイル、フレーム番号、必要なら時刻を描く。
-- 中央フレームは強調枠、IN/OUT 範囲外は暗く、素材範囲や選択範囲は薄い overlay で示す。
-- 下段は上段のズーム倍率に追従しない。現在フレームが変わるたびに中心を更新する。
-- 下段クリックで該当フレームへ seek、ドラッグ/ホイールはフレーム単位 step に割り当てる。
-
-データ/キャッシュ仕様:
-
-- `RamPlayer_web` の `StepFrame` 相当を導入する。
-  - `time`
-  - `duration`
-  - `frameIndex`
-  - `canvas`
-- 現在フレームの前後を `CanvasSink.getCanvas()` または連続 iterator で先読みする。
-- `stepFrames` / `stepKeys` のように frame timestamp を key にしたメモリキャッシュを持つ。
-- 再生中は下段キャッシュを最小限にし、一時停止/シーク停止中は前後フレームを厚めに先読みする。
-- メモリ上限は通常サムネイル LRU とは分け、プレビュー用フレームキャッシュとして管理する。
-
-Mediabunny 連携:
-
-- 現在フレームの描画と下段 filmstrip は同じ `MediabunnySourceSession` からフレームを取得する。
-- `CanvasSink` の exact frame 取得を基本にし、連続フレームが必要な場合は iterator でまとめて読む。
-- 取得した canvas は `HTMLCanvasElement` として保持し、object URL や jpg blob には変換しない。
-- 新しい seek が入ったら generation id で古い先読みを破棄する。
-
-実装候補:
-
-- `src/timeline/sourceTimeline.ts`: 上段タイムライン。
-- `src/timeline/frameStrip.ts`: 下段毎フレーム timeline の描画と pointer 操作。
-- `src/media/stepFrameCache.ts`: 現フレーム付近の exact frame cache。
-- `src/media/sourceSession.ts`: `CanvasSink` / iterator を提供。
-
-完了条件:
-
-- 上段タイムラインをズーム/パンしても、下段は現フレーム周辺の毎フレーム表示を維持する。
-- 中央スロットが現在フレームと一致する。
-- 左右フレームをクリックしてフレーム単位で移動できる。
-- IN/OUT 境界付近で、下段表示から境界フレームを確認できる。
-- 下段の生成が上段サムネイルや再生操作をブロックしない。
-
-### 8. プレビュー再生を段階的に Mediabunny 化する
-
-全面移行の最終形は、`<video id="srcVideo">` 依存を減らし、Mediabunny + canvas player に寄せる。
-
-ただし、編集アプリ側はクロッププレビュー、素材選択、出力シーケンス再生など既存連携が多いので段階的に行う。
-
-Phase A:
-
-- `<video>` 再生は残す。
-- メタデータ取得とサムネイルだけ Mediabunny に移行。
-- `urlFor()` は一時互換として残す。
-
-Phase B:
-
-- RamPlayer の `Player` を複数ソース対応に分解して導入。
-- ソースプレビューを canvas 再生へ置き換える。
-- `requestVideoFrameCallback` 依存の fps probe を Mediabunny track stats へ置き換える。
-
-Phase C:
-
-- クロッププレビューも canvas source frame を入力にする。
-- 出力シーケンス再生を複数 source session の切り替えで実装する。
-- `<video>` は fallback または削除。
-
-### 9. 書き出しを Mediabunny 主経路へ再設計する
-
-現在の `export.js` は `<video>` を実時間再生し、その映像を canvas に描き、`canvas.captureStream()` + `MediaRecorder` で録画している。この方式は廃止対象にする。最終形では、プレビュー再生とは独立した deterministic な export pipeline を作り、Mediabunny に読み込み、デコード、エンコード、mux を任せる。
-
-基本方針:
-
-- export は `<video>.play()` を呼ばない。
-- export は `MediaRecorder` を主経路にしない。
-- 入力は元 handle から再取得した `File` を `BlobSource` で開く。
-- 出力は `Output` + `Mp4OutputFormat` + `BufferTarget` を基本にする。
-- 単純 trim は packet copy を優先し、必要な場合だけ reencode する。
-- クロップ、テキスト、複数素材連結がある場合は、Mediabunny で各素材を decode し、合成 canvas を `CanvasSource` から encode する。
-
-短期:
-
-- `freshFileFor()` を元 handle 再取得ベースに変更し、export にコピーではなく元 `File` を渡す。
-- `media/` コピー前提をなくす。
-- 単一素材かつクロップ/テキストなしの trim export に、RamPlayer の `export/clipExport.ts` 相当を移植する。
-- GOP 境界に合う範囲は `EncodedPacketSink` + `EncodedVideoPacketSource` / `EncodedAudioPacketSource` による packet copy を使う。
-- GOP 境界に合わない範囲は `Conversion` で reencode する。
-
-中期:
-
-- 複数素材のシーケンスを Mediabunny export graph に載せる。
-- 各素材は `CanvasSink` / `VideoSampleSink` で必要時刻のフレームを取得する。
-- 出力サイズの canvas にクロップ、パン、ズーム、背景ぼかし、テキスト overlay を描画する。
-- 描画済み canvas を `CanvasSource` で H.264/MP4 へ投入する。
-- 音声は `AudioBufferSink` で取り出し、クリップ範囲に合わせて `AudioBufferSource` へ投入する。
-
-長期:
-
-- BGM、複数音声、音量調整、フェードを AudioBuffer ベースで mix する。
-- 進捗、キャンセル、エラー復旧を export pipeline 内で管理する。
-- ffmpeg.wasm fallback は原則廃止し、必要な codec fallback だけ明示的に残す。
-
-注意:
-
-- 現行のクロップ/overlay 合成は canvas で再実装する必要がある。
-- `CanvasSource` は合成済みフレームのエンコードに使い、素材の読み込みは `CanvasSink` / `VideoSampleSink` 側で行う。
-- 音声の複数クリップ連結と BGM 対応は、映像 export とは分けて設計する。
-- packet copy はクロップ/テキスト合成とは両立しないため、無変換 trim 用の最適化として扱う。
-- `MediaRecorder` は検証用または緊急 fallback に限定し、通常の書き出し経路から外す。
+当面は fallback を残しても export / thumbnail / frame strip の主経路は Mediabunny のまま。ただし「Mediabunny で読めないが `<video>` では読める」ファイルは export できない可能性があるため、UI に decode 可否を出すのが望ましい。
 
 ## 実装フェーズ
 
-### Phase 0: 土台整理
+### Phase 1: 現状維持のまま安全化
 
-- Vite + TypeScript の最小構成を追加する。
-- Mediabunny `^1.49.0` を dependency に追加する。
-- 既存アプリが起動する状態を維持する。
-- 文字化けコメント/文言は機能変更と分けて扱う。
-
-完了条件:
-
-- `npm run dev` で現行 UI が開く。
-- `npm run build` が通る。
-
-### Phase 1: コピー廃止
-
-- `projectStore.copyIntoMedia()` を新規追加フローから外す。
-- `fileOpen` を `mediaRegistry` / `sourceHandles` に分割する。
-- 新規追加時は元 handle と `File` を登録する。
-- プロジェクト保存には `relPath` を書かない。
-- 旧プロジェクトの `relPath` / `media/` コピー互換は残さない。
+- [x] 計画ファイルを現状に合わせて更新する。
+- [x] 出力連続プレビューの検証用 Mediabunny exact frame 描画を追加する。
+- [x] 通常の出力連続再生は音声とリアルタイム性のため native video 経路へ戻す。
+- [x] 既存の通常プレビュー、上段タイムライン、下段 frame strip は壊さない。
 
 完了条件:
 
-- 新規追加で `media/` に動画がコピーされない。
-- 再読み込み後、権限が残っていれば元ファイルを自動再リンクできる。
-- 権限がなければ明示的な再リンク UI になる。
+- 出力クリップ連続再生で `out` 以降の不要フレームが表示されない。
+- 書き出し結果とプレビューの素材境界が一致する。
+- `node --check` が通る。
 
-### Phase 2: Mediabunny メタデータ解析
+### Phase 2: Source Session 共通化
 
-- `probeDuration()` と `probeFps()` を Mediabunny ベースに置き換える。
-- `duration`, `fps`, `width`, `height`, `hasAudio` を source model に保存する。
-- デコード不可 codec のエラーを UI に返す。
-
-完了条件:
-
-- MP4/MOV/WebM/MKV でメタデータが取得できる。
-- fps が `requestVideoFrameCallback` の再生サンプリングなしで決まる。
-
-### Phase 3: メモリサムネイル
-
-- `frameCache.js` のファイル write-through を廃止する。
-- `CanvasSink` で keyframe/exact thumbnail を生成する。
-- タイムライン表示範囲ごとの thumbnail queue を実装する。
-- メモリ LRU と generation cancel を実装する。
+- [x] `mediaSession.js` を追加する。
+- [x] preview / thumbnail の exact frame 取得を共有する。
+- [ ] export の映像 session も共有層へ寄せる。
+- [ ] session の LRU と dispose を入れる。
+- [ ] 連続フレーム取得時の queue / generation cancel を統一する。
 
 完了条件:
 
-- `cache/frames` が作られない。
-- タイムラインスクロール/ズーム中にサムネイル生成が詰まらない。
-- 再生・シーク操作がサムネイル生成より優先される。
+- 同じ動画に対する `Input` / `CanvasSink` の重複生成が減る。
+- seek / timeline 操作で古い frame request が描画を上書きしない。
 
-### Phase 4: 下段毎フレームタイムライン
+### Phase 3: ソースプレビューの canvas 化
 
-- 現行のソースタイムライン直下に `frameStrip` canvas を追加する。
-- RamPlayer の `stepStripFrames()` / `renderFilmstrip()` を参考に、現フレーム中心の前後 10 フレーム表示を実装する。
-- `stepFrameCache` を追加し、現在位置付近の exact frame をメモリに保持する。
-- 一時停止/シーク停止中は前後フレームを先読みし、再生中は生成を抑制する。
-- 下段クリック、ホイール、左右キー操作をフレーム単位 seek/step に接続する。
+- `<video>` の一時停止 frame 表示を Mediabunny canvas に置き換える。
+- playhead / seek bar / frame strip は共通 clock から更新する。
+- 通常再生は `performance.now()` ベースの clock と exact frame decode で行う。
 
 完了条件:
 
-- 上段タイムラインのズーム状態と独立して、下段に現フレーム近傍の毎フレームが表示される。
-- 中央スロットが現在フレームと一致する。
-- 下段からフレーム単位で seek/step できる。
-- IN/OUT 境界や素材端が下段のフレーム表示で確認できる。
+- `<video>.currentTime` なしで seek 結果のフレームが表示される。
+- フレーム番号表示、上段 playhead、下段 frame strip が同じ frame index を指す。
 
-### Phase 5: プレビューの Mediabunny 化
+### Phase 4: 音声プレビュー
 
-- RamPlayer の `Player` を編集アプリ用に分解する。
-- source preview を canvas 再生へ置き換える。
-- フレーム送り、範囲再生、ループ、シーケンス再生を canvas player で実装する。
+- Mediabunny audio samples を WebAudio へ流す。
+- シーケンス切り替え時に映像 frame clock と音声 clock を同期する。
+- まず素材音声のみ対応し、BGM / mix / fade は別フェーズにする。
 
 完了条件:
 
-- `<video>` なしでソースプレビュー、素材範囲再生、出力シーケンス再生ができる。
-- 大きな動画でもメモリ上限内でシーク/停止/再生できる。
+- 出力シーケンス再生で音声も素材順に鳴る。
+- 停止、seek、素材境界で音ズレや残響が残らない。
 
-### Phase 6: 書き出し刷新
+### Phase 5: `<video>` と native fallback の削除
 
-- 元 handle から取得した `File` を export に渡す。
-- `<video>` 再生、`canvas.captureStream()`、`MediaRecorder` に依存した export 経路を廃止する。
-- 単一クリップ trim は Mediabunny の packet copy / `Conversion` reencode を導入する。
-- 複数素材 + クロップ + テキスト出力は `Output` + `CanvasSource` + canvas 合成で再実装する。
-- 音声は `AudioBufferSink` / `AudioBufferSource` を使い、クリップ範囲に合わせて連結する。
-- ffmpeg.wasm は必要な fallback のみに残すか、削除する。
+- `index.html` の `<video id="srcVideo">` を canvas へ置き換える。
+- `fileOpen.urlFor()` と object URL 管理を削る。
+- `probeDuration()` / `probeFps()` / `requestVideoFrameCallback` fallback を削る。
 
 完了条件:
 
-- コピーなしの元ファイルから書き出せる。
-- 既存の 9:16 crop 出力と見た目が一致する。
-- 長尺/大容量でも wasm メモリに全投入しない。
-- export が実時間再生速度に縛られない。
-- タブの表示状態や `<video>` の再生可否に export 結果が依存しない。
-
-## データ移行方針
-
-新しい source 例:
-
-```json
-{
-  "id": "src_xxxxxxx",
-  "fileName": "input.mp4",
-  "mediaKey": "hash(name:size:lastModified)",
-  "size": 123456789,
-  "lastModified": 1780000000000,
-  "duration": 123.456,
-  "fps": 29.97,
-  "width": 1920,
-  "height": 1080,
-  "hasAudio": true,
-  "handleKey": "source:src_xxxxxxx:handle"
-}
-```
-
-旧プロジェクト互換:
-
-- 不要。`handleKey` がない source は `missing` として扱い、必要なら手動で再リンクする。
-- 旧 `media/` 内コピーの自動探索は行わない。
-
-## リスクと対策
-
-- ブラウザは絶対パス文字列から直接ファイルを開けない。
-  - 対策: File System Access API の handle を保存し、権限がない場合は再リンクを要求する。
-- Safari/Firefox は File System Access API と WebCodecs 対応が限定的。
-  - 対策: Chrome/Edge を主対象に明記し、file input fallback はセッション限定にする。
-- `CanvasSink` の多重生成でメモリを使いすぎる。
-  - 対策: 用途ごとの poolSize を小さくし、LRU を件数/推定 bytes で制御する。
-- タイムライン exact thumbnail が重い。
-  - 対策: keyframe を先に表示し、アイドル時だけ exact に差し替える。
-- 下段毎フレームタイムラインは exact frame を多く保持しがち。
-  - 対策: RamPlayer と同様に表示半径を制限し、再生中/一時停止中でキャッシュ予算を分ける。
-- 既存 `<video>` 前提の UI が多い。
-  - 対策: Phase A では `<video>` を残し、Mediabunny 化をサムネイル/メタデータから始める。
-- 書き出しはクロップ/テキスト/音声で複雑。
-  - 対策: 単一素材 trim の packet copy / reencode を先に入れ、その後に canvas 合成 export と音声連結を段階実装する。
-- `CanvasSource` export はフレーム生成タイミングをこちらで管理する必要がある。
-  - 対策: 出力 fps から timestamp を固定計算し、1 frame ずつ合成して投入する。再生クロックや rAF は使わない。
-- 音声 mix は映像合成より失敗しやすい。
-  - 対策: 最初は素材音声の直列連結だけを実装し、BGM/mix/fade は別段階にする。
+- 通常操作、サムネイル、下段ライン、出力プレビュー、書き出しがすべて Mediabunny/WebCodecs 主経路で動く。
+- `<video>`、`MediaRecorder`、`canvas.captureStream()` が通常経路から消える。
 
 ## 検証項目
 
-- 新規プロジェクトで動画追加後、`media/` にコピーされない。
-- プロジェクト保存後にブラウザを再読み込みし、権限があれば元ファイルを復元できる。
-- 権限がない場合に再リンク導線が出る。
-- `cache/frames` が作成されない。
-- タイムラインのズーム/パン/素材選択でサムネイルが破綻しない。
-- 上段タイムラインのズーム/パンに関係なく、下段に現在フレーム付近の毎フレームが表示される。
-- 下段中央のフレームがプレビューの現在フレームと一致する。
-- 下段クリック/ホイール/キー操作でフレーム単位に移動できる。
-- 再生中にサムネイル生成が UI を固めない。
-- 素材範囲、出力シーケンス、クロッププレビューの表示が現行と一致する。
-- 書き出しが `<video>` 再生なしで完了する。
-- 書き出し結果の長さ、fps、解像度、音声有無がプロジェクト設定と一致する。
-- 単一素材 trim で packet copy 可能なケースと reencode ケースの両方を確認する。
-- 複数素材 + クロップ + テキスト overlay の export 結果がプレビューと一致する。
-- 4K/長尺/可変 fps/音声なし/回転 metadata 付き動画で挙動を確認する。
-- build が通る。
-
-## 最初に着手する変更
-
-1. `package.json` / Vite / TypeScript を導入する。
-2. `src/media/sourceRegistry.ts` を作り、元 handle から `File` を再取得する経路を実装する。
-3. `copyIntoMedia()` 呼び出しを外し、新規追加で `media/` にコピーしないようにする。
-4. Mediabunny でメタデータ取得だけを先に置き換える。
-5. `frameCache.js` のファイル保存を止め、メモリ LRU のみにする。
-6. `CanvasSink` ベースのサムネイル生成を導入し、既存タイムラインに接続する。
-7. ソースタイムライン下に `frameStrip` canvas を追加し、現フレーム付近の毎フレーム表示を実装する。
-8. 単一素材 trim export を Mediabunny packet copy / `Conversion` で実装し、`MediaRecorder` 経路から切り離す。
-9. 複数素材 export 用に `CanvasSource` ベースの合成エンジンを設計・実装する。
+- 新規作業フォルダを選び、動画を追加しても `media/` や `cache/frames` が作られない。
+- プロジェクトを開き直し、権限が残っていれば動画が自動復帰する。
+- 権限がない場合は再リンク導線が出る。
+- 上段タイムラインで素材を作成、移動、trim できる。
+- 下段毎フレームラインで素材枠が表示され、frame 単位で移動・trim できる。
+- 出力連続プレビューで素材末尾の不要フレームが見えない。
+- 書き出し結果の映像境界が下段ラインと一致する。
+- 音声あり素材を書き出した MP4 に音声が入る。
+- 単一ソースでは source FPS が使われる。
+- 複数ソースで FPS が異なる場合は選択できる。
+- 出力解像度は長辺 1080 上限かつソース最大長辺に合わせられる。

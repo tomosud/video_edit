@@ -1,5 +1,5 @@
 // cropPreview.js — 9:16 canvas preview of the active source with crop/pan/zoom
-import { store } from './store.js';
+import { store } from './store.js?v=20260627-nativepreview3';
 
 let canvas, ctx, video;
 let raf = 0;
@@ -48,20 +48,36 @@ function draw() {
   drawCropped(ctx, video, W, H, currentCrop());
 }
 
-function drawBlurBackground(ctx, video, W, H, amount) {
+export function drawFrame(sourceCanvas, crop = currentCrop()) {
+  if (!ctx || !sourceCanvas) return;
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  drawCropped(ctx, sourceCanvas, W, H, crop);
+}
+
+function sourceSize(source) {
+  return {
+    w: source?.videoWidth || source?.width || 0,
+    h: source?.videoHeight || source?.height || 0,
+  };
+}
+
+function drawBlurBackground(ctx, source, W, H, amount) {
   if (amount <= 0) return;
-  const vw = video.videoWidth, vh = video.videoHeight;
+  const { w: vw, h: vh } = sourceSize(source);
+  if (!vw || !vh) return;
   const scale = Math.max(W / vw, H / vh) * 1.08;
   const dw = vw * scale, dh = vh * scale;
   ctx.save();
   ctx.globalAlpha = amount;
   ctx.filter = 'blur(24px)';
-  ctx.drawImage(video, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  ctx.drawImage(source, (W - dw) / 2, (H - dh) / 2, dw, dh);
   ctx.restore();
 }
 
-function drawCropped(ctx, video, W, H, crop) {
-  const vw = video.videoWidth, vh = video.videoHeight;
+function drawCropped(ctx, source, W, H, crop) {
+  const { w: vw, h: vh } = sourceSize(source);
+  if (!vw || !vh) return;
   const { panX = 0.5, panY = 0.5, zoom = 1, bgBlur = 0 } = crop || {};
   const targetAspect = W / H;
   const sourceAspect = vw / vh;
@@ -81,7 +97,7 @@ function drawCropped(ctx, video, W, H, crop) {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, W, H);
   if (sx < 0 || sy < 0 || sx + cropW > vw || sy + cropH > vh) {
-    drawBlurBackground(ctx, video, W, H, Math.max(0, Math.min(1, bgBlur)));
+    drawBlurBackground(ctx, source, W, H, Math.max(0, Math.min(1, bgBlur)));
   }
 
   const vx = Math.max(0, sx);
@@ -96,7 +112,7 @@ function drawCropped(ctx, video, W, H, crop) {
   const dy = (vy - sy) / cropH * H;
   const dw = sw / cropW * W;
   const dh = sh / cropH * H;
-  ctx.drawImage(video, vx, vy, sw, sh, dx, dy, dw, dh);
+  ctx.drawImage(source, vx, vy, sw, sh, dx, dy, dw, dh);
 }
 
 function loop() {

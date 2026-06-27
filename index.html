@@ -18,6 +18,7 @@
       <span class="sep"></span>
       <button id="btnAddVideo" class="btn" disabled>動画を追加</button>
       <select id="sourceSelect" class="sel" disabled></select>
+      <button id="btnRelinkMissing" class="btn" hidden disabled>動画アクセスを復元</button>
       <span class="sep"></span>
       <button id="btnUndo" class="btn" disabled title="Ctrl+Z">↶</button>
       <button id="btnRedo" class="btn" disabled title="Ctrl+Shift+Z">↷</button>
@@ -42,6 +43,7 @@
           <div id="tlPlayhead" class="playhead"></div>
         </div>
       </div>
+      <canvas id="frameStrip" class="frame-strip" title="現在フレーム付近。クリックで移動、ホイールで1フレーム移動"></canvas>
       <div id="tlOverview" class="tl-overview" title="全体俯瞰 — クリック/ドラッグで表示範囲を移動">
         <div id="ovClips" class="ov-clips"></div>
         <div id="ovWindow" class="ov-window"></div>
@@ -127,6 +129,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/app.js?v=20260627-nativepreview3"></script>
 </body>
 </html>

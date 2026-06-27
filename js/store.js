@@ -1,6 +1,4 @@
 // store.js — central editing state + pub/sub + undo/redo + debounced autosave
-import * as db from './db.js';
-
 const HISTORY_LIMIT = 100;
 const AUTOSAVE_DEBOUNCE = 500;
 
@@ -117,20 +115,25 @@ class Store {
     this._emit(); this._scheduleSave(); this._persistHistory();
   }
 
-  // ---- persistence (IndexedDB autosave) ----
+  // ---- persistence hooks (projectStore writes these to the workspace folder) ----
   _scheduleSave() {
     clearTimeout(this._saveTimer);
-    this._saveTimer = setTimeout(() => db.saveAutosave(this.project).catch(console.error), AUTOSAVE_DEBOUNCE);
+    this._saveTimer = setTimeout(() => {}, AUTOSAVE_DEBOUNCE);
   }
-  _persistHistory() { db.saveHistory({ undo: this._undo, redo: this._redo }).catch(() => {}); }
+  _persistHistory() {}
+
+  historyState() {
+    return { undo: this._undo, redo: this._redo };
+  }
+
+  loadHistoryState(hist) {
+    this._undo = Array.isArray(hist?.undo) ? hist.undo.slice(-HISTORY_LIMIT) : [];
+    this._redo = Array.isArray(hist?.redo) ? hist.redo.slice(-HISTORY_LIMIT) : [];
+    this._emit();
+  }
 
   async restore() {
-    const saved = await db.loadAutosave();
-    if (saved) this.project = migrate(saved);
-    const hist = await db.loadHistory();
-    if (hist) { this._undo = hist.undo || []; this._redo = hist.redo || []; }
-    this._emit();
-    return !!saved;
+    return false;
   }
 
   load(project) {
