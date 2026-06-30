@@ -21,6 +21,11 @@ export function init(canvasEl, videoEl) {
   draw();
 }
 
+export function refresh() {
+  resize();
+  draw();
+}
+
 function resize() {
   // 9:16, fit to the preview box without leaving a wide unused column.
   const wrap = canvas.parentElement;

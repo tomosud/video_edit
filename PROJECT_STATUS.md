@@ -79,6 +79,9 @@ Materials and preview behavior:
 - Source preview crop and vertical preview crop have independent edit modes and independent saved settings.
 - Double-clicking either preview toggles its crop edit mode.
 - Crop sliders appear only while that preview is in crop edit mode, with a reset button.
+- Crop sliders are laid out below the preview surface and must not overlap video/canvas content.
+- When crop controls appear or disappear, the vertical preview canvas is resized to the remaining preview surface so the UI does not clip the canvas.
+- Source preview playback remains `object-fit: contain`; separator changes must not crop the source video.
 - In normal mode, hover shows `Double-click to edit crop`.
 
 Edit area behavior:

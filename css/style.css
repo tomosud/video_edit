@@ -88,7 +88,18 @@ body {
   display: flex; align-items: center; gap: 10px;
   padding: 7px 12px; font-size: 13px; color: var(--text-dim);
   border-bottom: 1px solid var(--line); flex: 0 0 auto;
+  min-height: 32px;
+  overflow: hidden;
+  white-space: nowrap;
+  flex-wrap: nowrap;
 }
+.pane-head > span:not(.spacer) {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+}
+.pane-head .spacer { min-width: 0; }
 .hint { font-size: 11px; color: #6b7283; }
 .time { font-variant-numeric: tabular-nums; }
 .placeholder { color: var(--text-dim); font-size: 13px; }
@@ -226,11 +237,11 @@ body {
 /* ===== Row 3: Shelf + previews ===== */
 #workPane {
   display: grid;
-  grid-template-columns: var(--materials-col, 220px) 6px minmax(280px, 1fr) 6px var(--vertical-col, 260px);
+  grid-template-columns: minmax(120px, var(--materials-col, 220px)) 6px minmax(0, 1fr) 6px minmax(150px, var(--vertical-col, 260px));
   gap: 0; min-height: 0;
   overflow: hidden;
 }
-#workPane > .pane { min-width: 0; }
+#workPane > .pane { min-width: 0; min-height: 0; overflow: hidden; }
 .pane-splitter {
   cursor: col-resize;
   background: transparent;
@@ -258,10 +269,6 @@ body {
 }
 #srcVideo {
   width: 100%; height: 100%; object-fit: contain;
-  transform:
-    translate(calc((var(--source-pan-x, .5) - .5) * 42%), calc((var(--source-pan-y, .5) - .5) * 42%))
-    scale(var(--source-zoom, 1));
-  transform-origin: center;
 }
 #origPane.crop-editing {
   box-shadow: inset 0 0 0 1px rgba(255,182,72,.65);
@@ -300,6 +307,9 @@ body {
   padding: 6px 8px;
   display: none;
   grid-template-columns: 1fr 1fr;
+  align-items: center;
+  max-height: 92px;
+  overflow: hidden;
 }
 #vertPane.crop-editing .crop-controls { display: grid; }
 #origPane.crop-editing .source-crop-controls { display: grid; }

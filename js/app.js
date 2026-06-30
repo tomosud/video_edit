@@ -456,6 +456,7 @@ function wireCrop() {
   el.vertPane.addEventListener('dblclick', (e) => {
     e.preventDefault();
     store.setUI({ cropEditActive: !store.ui.cropEditActive });
+    requestAnimationFrame(() => cropPreview.refresh());
   });
   el.origPane.addEventListener('dblclick', (e) => {
     e.preventDefault();
@@ -722,6 +723,7 @@ function onState(project, ui) {
   }
   el.vertPane.classList.toggle('crop-editing', !!ui.cropEditActive);
   el.origPane.classList.toggle('crop-editing', !!ui.sourceCropEditActive);
+  requestAnimationFrame(() => cropPreview.refresh());
 
   renderSeekDecor();
   scheduleProjectSave();
