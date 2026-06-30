@@ -1,5 +1,5 @@
 // mediaInfo.js - Mediabunny-backed source metadata probing
-import { ALL_FORMATS, BlobSource, Input } from '../lib/mediabunny.min.js?v=20260627-nativepreview3';
+import { ALL_FORMATS, BlobSource, Input } from '../lib/mediabunny.min.js?v=20260630-relink-folder';
 
 const COMMON_FPS = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 120];
 

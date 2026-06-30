@@ -1,7 +1,7 @@
 // mediaSession.js - shared Mediabunny frame sessions for preview-oriented exact frame reads
-import { ALL_FORMATS, BlobSource, CanvasSink, Input } from '../lib/mediabunny.min.js?v=20260627-nativepreview3';
-import { fileFor, freshFileFor } from './fileOpen.js?v=20260627-nativepreview3';
-import { frameProbeTime } from './util.js?v=20260627-nativepreview3';
+import { ALL_FORMATS, BlobSource, CanvasSink, Input } from '../lib/mediabunny.min.js?v=20260630-relink-folder';
+import { fileFor, freshFileFor } from './fileOpen.js?v=20260630-relink-folder';
+import { frameProbeTime } from './util.js?v=20260630-relink-folder';
 
 const sessions = new Map(); // key -> { file, input, ready, sink, chain }
 

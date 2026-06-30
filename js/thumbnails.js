@@ -1,5 +1,5 @@
 // thumbnails.js - Mediabunny CanvasSink thumbnails, memory-only
-import { getVideoFrameCanvas } from './mediaSession.js?v=20260627-nativepreview3';
+import { getVideoFrameCanvas } from './mediaSession.js?v=20260630-relink-folder';
 
 const THUMB_H = 132;
 const TARGET_SPACING = 200;

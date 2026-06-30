@@ -1,18 +1,24 @@
 // fileOpen.js - manage source media: pick files, runtime URL registry, re-link
-import { store, uid } from './store.js?v=20260627-nativepreview3';
-import * as db from './db.js?v=20260627-nativepreview3';
-import * as projectStore from './projectStore.js?v=20260627-nativepreview3';
-import { hashKey } from './util.js?v=20260627-nativepreview3';
-import { readMediaInfo } from './mediaInfo.js?v=20260627-nativepreview3';
+import { store, uid } from './store.js?v=20260630-relink-folder';
+import * as db from './db.js?v=20260630-relink-folder';
+import * as projectStore from './projectStore.js?v=20260630-relink-folder';
+import { hashKey } from './util.js?v=20260630-relink-folder';
+import { readMediaInfo } from './mediaInfo.js?v=20260630-relink-folder';
 
 // runtime registry: sourceId -> { file, url, handle }
 const media = new Map();
 let addVideoInFlight = null;
 const handleKeyOf = (sourceId) => projectStore.sourceHandleKey(sourceId);
+const VIDEO_EXTS = new Set(['.mp4', '.mov', '.mkv', '.webm', '.m4v']);
+const SKIP_SCAN_DIRS = new Set(['.viralcut']);
 
 export function urlFor(sourceId) { return media.get(sourceId)?.url || null; }
 export function fileFor(sourceId) { return media.get(sourceId)?.file || null; }
 export function isLinked(sourceId) { return media.has(sourceId); }
+
+function storedHandleKey(source) {
+  return source.handleKey || source.access?.handleKey || handleKeyOf(source.id);
+}
 
 async function readPermission(handle) {
   if (!handle?.queryPermission) return 'prompt';
@@ -33,7 +39,7 @@ async function requestReadPermission(handle) {
 }
 
 async function fileFromStoredHandle(source, { requestPermission = false } = {}) {
-  const handle = await db.loadHandle(source.handleKey || source.access?.handleKey || handleKeyOf(source.id));
+  const handle = await db.loadHandle(storedHandleKey(source));
   if (!handle) return null;
 
   let permission = await readPermission(handle);
@@ -47,6 +53,65 @@ async function fileFromStoredHandle(source, { requestPermission = false } = {}) 
   } catch {
     return null;
   }
+}
+
+function extOf(name) {
+  const i = String(name || '').lastIndexOf('.');
+  return i >= 0 ? String(name).slice(i).toLowerCase() : '';
+}
+
+function isVideoFileName(name) {
+  return VIDEO_EXTS.has(extOf(name));
+}
+
+function fileMatchScore(source, file) {
+  const sameName = !!source.fileName && file.name === source.fileName;
+  const sourceSize = Number(source.size || 0);
+  const sameSize = sourceSize > 0 && file.size === sourceSize;
+  const sourceModified = Number(source.lastModified || 0);
+  const sameModified = sourceModified > 0 && Math.abs(file.lastModified - sourceModified) < 2000;
+
+  if (sameName && (!sourceSize || sameSize)) return 100;
+  if (sameSize && sameModified) return 90;
+  return 0;
+}
+
+async function fileFromProjectFolder(source) {
+  const dir = projectStore.dirHandle();
+  if (!dir) return null;
+
+  if (source.fileName) {
+    try {
+      const handle = await dir.getFileHandle(source.fileName);
+      const file = await handle.getFile();
+      if (fileMatchScore(source, file) >= 100) return { file, handle };
+    } catch { /* fall back to scanning */ }
+  }
+
+  const matches = [];
+  async function scan(folder, depth = 0) {
+    if (depth > 3 || !folder?.entries) return;
+    try {
+      for await (const [name, handle] of folder.entries()) {
+        if (handle.kind === 'directory') {
+          if (!SKIP_SCAN_DIRS.has(name)) await scan(handle, depth + 1);
+          continue;
+        }
+        if (handle.kind !== 'file' || !isVideoFileName(name)) continue;
+        try {
+          const file = await handle.getFile();
+          const score = fileMatchScore(source, file);
+          if (score) matches.push({ score, file, handle });
+        } catch { /* ignore unreadable candidate */ }
+      }
+    } catch { /* ignore folders that cannot be enumerated */ }
+  }
+
+  await scan(dir);
+  matches.sort((a, b) => b.score - a.score);
+  if (!matches.length) return null;
+  if (matches[1] && matches[1].score === matches[0].score) return null;
+  return { file: matches[0].file, handle: matches[0].handle };
 }
 
 // Get a FRESH File for reading (export). A File captured earlier can go stale
@@ -221,9 +286,20 @@ export async function relinkAll({ requestPermission = false } = {}) {
   const missing = [];
   for (const s of store.get().sources) {
     if (media.has(s.id)) continue;
-    const linked = await fileFromStoredHandle(s, { requestPermission });
-    if (linked) register(s.id, linked.file, linked.handle);
-    else missing.push(s);
+    const linked = await fileFromStoredHandle(s, { requestPermission }) || await fileFromProjectFolder(s);
+    if (linked) {
+      register(s.id, linked.file, linked.handle);
+      const handleKey = storedHandleKey(s);
+      if (linked.handle) db.saveHandle(handleKey, linked.handle).catch(() => {});
+      if (s.handleKey !== handleKey) {
+        store.update((p) => {
+          const t = p.sources.find(x => x.id === s.id);
+          if (t) t.handleKey = handleKey;
+        }, { commit: false });
+      }
+    } else {
+      missing.push(s);
+    }
   }
   // backfill missing metadata now that media is linked
   for (const s of store.get().sources) {

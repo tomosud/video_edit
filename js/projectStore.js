@@ -1,5 +1,5 @@
 // projectStore.js - project workspace I/O (.viralcut/project.json, history, exports)
-import * as db from './db.js?v=20260627-nativepreview3';
+import * as db from './db.js?v=20260630-relink-folder';
 
 const WORK_DIR = '.viralcut';
 const PROJECT_FILE = 'project.json';

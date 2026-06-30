@@ -1,14 +1,14 @@
-﻿// app.js - entry: wire modules, selection side-effects, ranged playback, persistence
-import { store } from './store.js?v=20260627-nativepreview3';
-import * as projectStore from './projectStore.js?v=20260627-nativepreview3';
-import * as fileOpen from './fileOpen.js?v=20260627-nativepreview3';
-import * as cropPreview from './cropPreview.js?v=20260627-nativepreview3';
-import * as srcTimeline from './sourceTimeline.js?v=20260627-nativepreview3';
-import * as frameStrip from './frameStrip.js?v=20260627-nativepreview3';
-import * as shelf from './materialShelf.js?v=20260627-nativepreview3';
-import * as outSeq from './outputSequence.js?v=20260627-nativepreview3';
-import { exportProject, downloadBlob } from './export.js?v=20260627-nativepreview3';
-import { fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js?v=20260627-nativepreview3';
+// app.js - entry: wire modules, selection side-effects, ranged playback, persistence
+import { store } from './store.js?v=20260630-relink-folder';
+import * as projectStore from './projectStore.js?v=20260630-relink-folder';
+import * as fileOpen from './fileOpen.js?v=20260630-relink-folder';
+import * as cropPreview from './cropPreview.js?v=20260630-relink-folder';
+import * as srcTimeline from './sourceTimeline.js?v=20260630-relink-folder';
+import * as frameStrip from './frameStrip.js?v=20260630-relink-folder';
+import * as shelf from './materialShelf.js?v=20260630-relink-folder';
+import * as outSeq from './outputSequence.js?v=20260630-relink-folder';
+import { exportProject, downloadBlob } from './export.js?v=20260630-relink-folder';
+import { fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js?v=20260630-relink-folder';
 
 const $ = (id) => document.getElementById(id);
 const el = {};
@@ -102,7 +102,12 @@ function wireMenu() {
   });
   el.btnRelinkMissing.onclick = guard(async () => {
     el.btnRelinkMissing.disabled = true;
-    const missing = await fileOpen.relinkAll({ requestPermission: true });
+    let missing = await fileOpen.relinkAll({ requestPermission: true });
+    for (const source of missing) {
+      if (!confirm('Choose a video file for: ' + (source.fileName || source.id) + '?')) continue;
+      await fileOpen.relinkOne(source.id);
+    }
+    missing = refreshMissingSources();
     setMissingSources(missing);
     refreshStateViews();
     setStatus(missing.length

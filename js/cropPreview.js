@@ -1,5 +1,5 @@
 // cropPreview.js - 9:16 canvas preview of the active source with crop/pan/zoom
-import { store } from './store.js?v=20260627-nativepreview3';
+import { store } from './store.js?v=20260630-relink-folder';
 
 let canvas, ctx, video;
 let raf = 0;

@@ -1,7 +1,7 @@
 // previewSequence.js - deterministic output-sequence preview via Mediabunny exact frames
-import { store } from './store.js?v=20260627-nativepreview3';
-import { getVideoFrameCanvas } from './mediaSession.js?v=20260627-nativepreview3';
-import * as cropPreview from './cropPreview.js?v=20260627-nativepreview3';
+import { store } from './store.js?v=20260630-relink-folder';
+import { getVideoFrameCanvas } from './mediaSession.js?v=20260630-relink-folder';
+import * as cropPreview from './cropPreview.js?v=20260630-relink-folder';
 
 let token = 0;
 let playing = false;

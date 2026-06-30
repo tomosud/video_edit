@@ -1,7 +1,7 @@
 // frameStrip.js - fixed per-frame strip around the current preview frame
-import { store, uid } from './store.js?v=20260627-nativepreview3';
-import { frameCanvas } from './thumbnails.js?v=20260627-nativepreview3';
-import { frameFromTime, frameStartTime, seekVideoFrame } from './util.js?v=20260627-nativepreview3';
+import { store, uid } from './store.js?v=20260630-relink-folder';
+import { frameCanvas } from './thumbnails.js?v=20260630-relink-folder';
+import { frameFromTime, frameStartTime, seekVideoFrame } from './util.js?v=20260630-relink-folder';
 
 const RADIUS = 10;
 const SLOT_COUNT = RADIUS * 2 + 1;

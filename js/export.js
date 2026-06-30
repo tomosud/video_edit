@@ -1,6 +1,6 @@
 // export.js - deterministic frame export via Mediabunny/WebCodecs.
-import { store } from './store.js?v=20260627-nativepreview3';
-import { freshFileFor } from './fileOpen.js?v=20260627-nativepreview3';
+import { store } from './store.js?v=20260630-relink-folder';
+import { freshFileFor } from './fileOpen.js?v=20260630-relink-folder';
 import {
   ALL_FORMATS,
   BlobSource,
@@ -14,7 +14,7 @@ import {
   Output,
   canEncodeAudio,
   canEncodeVideo,
-} from '../lib/mediabunny.min.js?v=20260627-nativepreview3';
+} from '../lib/mediabunny.min.js?v=20260630-relink-folder';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const even = (v) => Math.max(2, Math.round(v / 2) * 2);
