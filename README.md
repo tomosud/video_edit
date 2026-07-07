@@ -33,61 +33,8 @@ https://github.com/user-attachments/assets/2f78c3a2-bd52-47a0-9cd5-3c45e27d1c89
 - Autosave the current edit state to IndexedDB so reload does not immediately lose work.
 - No project folder is written to disk.
 
-## Running Locally
-
-Use the included batch file:
-
-```bat
-run_local.bat
-```
-
-Then open the local URL shown by the script, usually:
-
-```text
-http://127.0.0.1:8000
-```
-
-The app uses browser APIs for media decoding and export, so Chrome or Edge is recommended.
-
-## GitHub Pages
-
-This repository is a static site. No build step and no custom GitHub Actions workflow are required.
-
-Recommended Pages settings:
-
-- Source: `Deploy from a branch`
-- Branch: `main`
-- Folder: `/ (root)`
-
-After pushing changes, GitHub Pages may take a few minutes to update.
-
-## Data Model
-
-ViralCut is designed as a lightweight temporary editor:
-
-- Source video files stay local to the browser.
-- Edit state and saved file references are stored in IndexedDB when the browser allows it.
-- `New` clears the current browser edit state.
-- Export uses normal browser download behavior.
-
-## Development Notes
-
-- Keep the app static and GitHub Pages compatible.
-- Do not add a build system or server-side dependency unless the project direction changes.
-- If JavaScript files change, update the cache-buster query in `index.html`.
-- Browser visual verification is done manually by the user.
-
-## Main Files
-
-- `index.html` - application shell
-- `css/style.css` - UI styling
-- `js/app.js` - application wiring and export flow
-- `js/store.js` - central edit state and IndexedDB autosave integration
-- `js/sourceTimeline.js` - source timeline and cut editing
-- `js/horizontalPreview.js` - 16:9 crop preview
-- `js/cropPreview.js` - 9:16 crop preview
-- `js/export.js` - MP4 export
+## Acknowledgements
+Video metadata, frame access, and export are powered by Mediabunny.
 
 ## License
-
-This project is intended to use commercially usable licenses only. External libraries or model weights must be license-checked before being added.
+MIT. See LICENSE.
