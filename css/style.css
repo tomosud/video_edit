@@ -259,19 +259,40 @@ body {
   position: relative; height: 28px; flex: 0 0 auto;
   background: #0e1014; border-bottom: 1px solid var(--line);
   cursor: pointer; overflow: hidden; touch-action: none;
-  opacity: .82;
+  opacity: 1;
 }
-.ov-thumb-row { position: absolute; inset: 0; display: flex; pointer-events: none; opacity: .82; }
+.ov-thumb-row {
+  position: absolute; inset: 0; display: flex; pointer-events: none;
+  opacity: .58;
+  filter: saturate(.82) brightness(.72);
+}
 .ov-thumb-row .thumb-cell { border-right-color: rgba(0,0,0,.55); }
 .ov-clips { position: absolute; inset: 0; z-index: 2; }
-.ov-clip { position: absolute; top: 8px; bottom: 3px; background: rgba(79,140,255,.28); border: 1px solid rgba(79,140,255,.78); border-radius: 2px; }
-.ov-clip.selected { background: rgba(255,182,72,.34); border-color: var(--sel); opacity: .95; }
+.ov-clip {
+  position: absolute; top: 5px; bottom: 4px;
+  background: rgba(79,140,255,.34);
+  border: 2px solid rgba(125,178,255,.98);
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.75), 0 0 7px rgba(79,140,255,.55);
+}
+.ov-clip.selected {
+  background: rgba(255,182,72,.42);
+  border-color: var(--sel);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.78), 0 0 8px rgba(255,182,72,.75);
+  opacity: 1;
+}
 .ov-window {
   position: absolute; top: 0; bottom: 0; min-width: 2px;
-  background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.6);
-  border-radius: 2px; pointer-events: none; z-index: 3;
+  background: rgba(255,255,255,.16);
+  border: 2px solid rgba(255,255,255,.94);
+  border-radius: 3px; pointer-events: none; z-index: 3;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.72), 0 0 9px rgba(255,255,255,.45);
 }
-.ov-playhead { position: absolute; top: 0; bottom: 0; width: 1px; background: #fff; pointer-events: none; z-index: 4; }
+.ov-playhead {
+  position: absolute; top: 0; bottom: 0; width: 2px;
+  background: #fff; pointer-events: none; z-index: 4;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.75), 0 0 6px rgba(255,255,255,.8);
+}
 
 /* ===== Preview seek bar ===== */
 .seekbar {
