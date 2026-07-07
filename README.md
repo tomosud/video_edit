@@ -1,6 +1,13 @@
 # ViralCut
 
-ViralCut is a browser-only temporary video editing tool for making short vertical and horizontal clips from local video files.
+ブラウザだけで動く、シンプルな動画編集アプリ。
+
+プロジェクトの保存はできません。横型、縦型動画を同時に編集できます。
+
+
+<img width="1906" height="942" alt="image" src="https://github.com/user-attachments/assets/fec2bf93-2fd1-459a-8350-865cc6aac28e" />
+
+
 
 https://tomosud.github.io/video_edit/
 
