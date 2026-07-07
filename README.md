@@ -1,5 +1,7 @@
 # ViralCut
 
+https://tomosud.github.io/video_edit/
+
 ブラウザだけで動く、シンプルな動画編集アプリ。
 プロジェクトの保存はできません。横型、縦型動画を同時に編集できます。
 
@@ -10,7 +12,7 @@ You cannot save projects. You can edit landscape and portrait videos at the same
 
 
 
-https://tomosud.github.io/video_edit/
+
 
 
 
