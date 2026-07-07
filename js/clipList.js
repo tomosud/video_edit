@@ -1,7 +1,7 @@
-// clipList.js - output clip cards: add, select, delete, drag-reorder
-import { store, uid } from './store.js?v=20260707-indexeddb-autosave';
-import { singleThumb } from './thumbnails.js?v=20260707-indexeddb-autosave';
-import { fmtDur } from './util.js?v=20260707-indexeddb-autosave';
+﻿// clipList.js - output clip cards: add, select, delete, drag-reorder
+import { store, uid } from './store.js?v=20260707-horizontal-crop';
+import { singleThumb } from './thumbnails.js?v=20260707-horizontal-crop';
+import { fmtDur } from './util.js?v=20260707-horizontal-crop';
 
 let listEl, totalEl;
 const thumbCache = new Map(); // clipId -> dataURL
@@ -121,4 +121,5 @@ function reorder(fromId, toId) {
     clips.splice(toIdx, 0, moved);
   });
 }
+
 

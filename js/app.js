@@ -1,23 +1,25 @@
 // app.js - entry: wire modules, selection side-effects, ranged playback, temporary export
-import { store } from './store.js?v=20260707-indexeddb-autosave';
-import * as fileOpen from './fileOpen.js?v=20260707-indexeddb-autosave';
-import * as db from './db.js?v=20260707-indexeddb-autosave';
-import * as cropPreview from './cropPreview.js?v=20260707-indexeddb-autosave';
-import * as srcTimeline from './sourceTimeline.js?v=20260707-indexeddb-autosave';
-import * as frameStrip from './frameStrip.js?v=20260707-indexeddb-autosave';
-import * as shelf from './materialShelf.js?v=20260707-indexeddb-autosave';
-import * as outSeq from './outputSequence.js?v=20260707-indexeddb-autosave';
-import { exportProject, downloadBlob } from './export.js?v=20260707-indexeddb-autosave';
-import { fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js?v=20260707-indexeddb-autosave';
+import { store } from './store.js?v=20260707-horizontal-crop';
+import * as fileOpen from './fileOpen.js?v=20260707-horizontal-crop';
+import * as db from './db.js?v=20260707-horizontal-crop';
+import * as cropPreview from './cropPreview.js?v=20260707-horizontal-crop';
+import * as horizontalPreview from './horizontalPreview.js?v=20260707-horizontal-crop';
+import * as srcTimeline from './sourceTimeline.js?v=20260707-horizontal-crop';
+import * as frameStrip from './frameStrip.js?v=20260707-horizontal-crop';
+import * as shelf from './materialShelf.js?v=20260707-horizontal-crop';
+import * as outSeq from './outputSequence.js?v=20260707-horizontal-crop';
+import { exportProject, downloadBlob } from './export.js?v=20260707-horizontal-crop';
+import { fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js?v=20260707-horizontal-crop';
 
 const $ = (id) => document.getElementById(id);
 const el = {};
 ['btnNewProject','btnAddVideo','sourceSelect','btnUndo','btnRedo',
- 'btnExport','status','srcVideo','srcEmpty','origPane','origTime','btnPlay','btnLoop','vertPane','vertCanvas',
+ 'btnExport','status','srcVideo','srcEmpty','origPane','origTime','btnPlay','btnLoop','vertPane','vertCanvas','horizCanvas',
  'panX','panY','zoom','bgBlur','verticalCropReset',
- 'sourcePanX','sourcePanY','sourceZoom','sourceCropReset',
+ 'sourcePanX','sourcePanY','sourceZoom','sourceBgBlur','sourceCropReset',
  'overlay','overlayMsg','overlayProg',
  'confirm','confirmTitle','confirmMsg','confirmOk','confirmCancel',
+ 'exportMode','exportModeTitle','exportModeCancel',
  'srcPane','tlScroll','tlInner','thumbRow','clipBands','tlPlayhead','frameStrip','srcRange',
  'tlOverview','ovThumbRow','ovClips','ovWindow','ovPlayhead',
  'seekBar','seekMarks','seekRange','seekFill','seekHead','frameInfo',
@@ -34,6 +36,7 @@ let activeArea = 'timeline';
 
 function init() {
   cropPreview.init(el.vertCanvas, el.srcVideo);
+  horizontalPreview.init(el.horizCanvas, el.srcVideo);
   srcTimeline.init({
     scroll: el.tlScroll, inner: el.tlInner, thumbRow: el.thumbRow,
     bands: el.clipBands, playhead: el.tlPlayhead, range: el.srcRange,
@@ -444,30 +447,30 @@ function wireCrop() {
     s.addEventListener('input', applyVertical);
   }
   el.verticalCropReset.onclick = () => {
-    const crop = { panX: .5, panY: .5, zoom: 1, bgBlur: 0 };
+    const crop = { panX: .5, panY: .5, zoom: 1, bgBlur: 1 };
     const r = store.resolve();
     if (r?.material) store.update((p) => { r.material.crop = crop; });
     else store.setUI({ crop });
   };
 
   const applySource = () => {
-    const sourceCrop = { panX: +el.sourcePanX.value, panY: +el.sourcePanY.value, zoom: +el.sourceZoom.value };
+    const horizontalCrop = { panX: +el.sourcePanX.value, panY: +el.sourcePanY.value, zoom: +el.sourceZoom.value, bgBlur: +el.sourceBgBlur.value };
     const r = store.resolve();
     if (r?.material) {
-      store.updateLive(() => { r.material.sourceCrop = sourceCrop; });
+      store.updateLive(() => { r.material.horizontalCrop = horizontalCrop; });
     } else {
-      store.setUI({ sourceCrop });
+      store.setUI({ horizontalCrop });
     }
   };
-  for (const s of [el.sourcePanX, el.sourcePanY, el.sourceZoom]) {
+  for (const s of [el.sourcePanX, el.sourcePanY, el.sourceZoom, el.sourceBgBlur]) {
     s.addEventListener('pointerdown', startSource);
     s.addEventListener('input', applySource);
   }
   el.sourceCropReset.onclick = () => {
-    const sourceCrop = { panX: .5, panY: .5, zoom: 1 };
+    const horizontalCrop = { panX: .5, panY: .5, zoom: 1, bgBlur: 1 };
     const r = store.resolve();
-    if (r?.material) store.update((p) => { r.material.sourceCrop = sourceCrop; });
-    else store.setUI({ sourceCrop });
+    if (r?.material) store.update((p) => { r.material.horizontalCrop = horizontalCrop; });
+    else store.setUI({ horizontalCrop });
   };
 
   el.vertPane.addEventListener('dblclick', (e) => {
@@ -477,7 +480,8 @@ function wireCrop() {
   });
   el.origPane.addEventListener('dblclick', (e) => {
     e.preventDefault();
-    store.setUI({ sourceCropEditActive: !store.ui.sourceCropEditActive });
+    store.setUI({ horizontalCropEditActive: !store.ui.horizontalCropEditActive });
+    requestAnimationFrame(() => horizontalPreview.refresh());
   });
 }
 
@@ -490,7 +494,7 @@ function wireAreas() {
     const patch = {};
     if (area !== 'source') {
       if (store.ui.cropEditActive) patch.cropEditActive = false;
-      if (store.ui.sourceCropEditActive) patch.sourceCropEditActive = false;
+      if (store.ui.horizontalCropEditActive) patch.horizontalCropEditActive = false;
     }
     if (area !== 'timeline' && (store.ui.editMaterialId || store.ui.editMaterialIds?.length)) {
       patch.editMaterialId = null;
@@ -553,6 +557,10 @@ function wireWorkspaceSplitters() {
 // ---------- shortcuts ----------
 function wireShortcuts() {
   window.addEventListener('keydown', (e) => {
+    if (!el.exportMode.hidden) {
+      if (e.key === 'Escape') { e.preventDefault(); closeExportMode(null); }
+      return;
+    }
     // confirm dialog captures Enter/Escape while open
     if (!el.confirm.hidden) {
       if (e.key === 'Enter') { e.preventDefault(); closeConfirm(true); }
@@ -583,6 +591,11 @@ function wireConfirm() {
   el.confirmOk.onclick = () => closeConfirm(true);
   el.confirmCancel.onclick = () => closeConfirm(false);
   el.confirm.addEventListener('pointerdown', (e) => { if (e.target === el.confirm) closeConfirm(false); });
+  el.exportModeCancel.onclick = () => closeExportMode(null);
+  el.exportMode.addEventListener('pointerdown', (e) => { if (e.target === el.exportMode) closeExportMode(null); });
+  for (const btn of el.exportMode.querySelectorAll('[data-export-mode]')) {
+    btn.addEventListener('click', () => closeExportMode(btn.dataset.exportMode));
+  }
 }
 function askConfirm(message, okLabel = 'Delete', title = 'Confirm Delete') {
   el.confirmTitle.textContent = title;
@@ -622,7 +635,7 @@ async function deleteSelected() {
 
 // ---------- export ----------
 async function doExport() {
-  const settings = prepareExportSettings();
+  const settings = await prepareExportSettings();
   if (!settings) return;
   showOverlay('Preparing export...');
   try {
@@ -645,7 +658,7 @@ async function doExport() {
   } finally { hideOverlay(); }
 }
 
-function prepareExportSettings() {
+async function prepareExportSettings() {
   const p = store.get();
   const items = p.outputs.map(o => {
     const m = p.materials.find(x => x.id === o.materialId);
@@ -653,7 +666,7 @@ function prepareExportSettings() {
   }).filter(it => it?.source);
   if (!items.length) return null;
 
-  const mode = selectExportMode();
+  const mode = await askExportMode();
   if (!mode) return null;
 
   const currentName = p.exportName || p.name || 'viralcut';
@@ -673,15 +686,21 @@ function prepareExportSettings() {
   return { fps, targets };
 }
 
-function selectExportMode() {
-  const picked = prompt('Export ratio\nType: vertical, horizontal, or both', 'vertical');
-  if (picked == null) return null;
-  const value = picked.trim().toLowerCase();
-  if (['vertical', 'v', '9:16', '916'].includes(value)) return 'vertical';
-  if (['horizontal', 'h', '16:9', '169'].includes(value)) return 'horizontal';
-  if (['both', 'all'].includes(value)) return 'both';
-  alert('Type vertical, horizontal, or both');
-  return null;
+let exportModeResolve = null;
+function askExportMode() {
+  el.exportMode.hidden = false;
+  const first = el.exportMode.querySelector('[data-export-mode]');
+  first?.focus();
+  return new Promise((res) => { exportModeResolve = res; });
+}
+
+function closeExportMode(value) {
+  if (el.exportMode.hidden) return;
+  el.exportMode.hidden = true;
+  const r = exportModeResolve;
+  exportModeResolve = null;
+  el.btnExport.focus();
+  if (r) r(value);
 }
 
 function resolveExportFps(sources, fallback) {
@@ -760,24 +779,22 @@ function onState(project, ui) {
   // reflect crop in sliders (output's crop if selected, else draft)
   const r = store.resolve();
   const crop = (r && r.crop) || ui.crop;
-  const sourceCrop = (r && r.material?.sourceCrop) || ui.sourceCrop || { panX: .5, panY: .5, zoom: 1 };
+  const horizontalCrop = (r && r.material?.horizontalCrop) || ui.horizontalCrop || { panX: .5, panY: .5, zoom: 1, bgBlur: 1 };
   if (crop) {
     if (document.activeElement !== el.panX) el.panX.value = crop.panX;
     if (document.activeElement !== el.panY) el.panY.value = crop.panY;
     if (document.activeElement !== el.zoom) el.zoom.value = crop.zoom;
     if (document.activeElement !== el.bgBlur) el.bgBlur.value = crop.bgBlur ?? 0;
   }
-  if (sourceCrop) {
-    if (document.activeElement !== el.sourcePanX) el.sourcePanX.value = sourceCrop.panX;
-    if (document.activeElement !== el.sourcePanY) el.sourcePanY.value = sourceCrop.panY;
-    if (document.activeElement !== el.sourceZoom) el.sourceZoom.value = sourceCrop.zoom;
-    el.srcVideo.style.setProperty('--source-pan-x', sourceCrop.panX);
-    el.srcVideo.style.setProperty('--source-pan-y', sourceCrop.panY);
-    el.srcVideo.style.setProperty('--source-zoom', sourceCrop.zoom);
+  if (horizontalCrop) {
+    if (document.activeElement !== el.sourcePanX) el.sourcePanX.value = horizontalCrop.panX;
+    if (document.activeElement !== el.sourcePanY) el.sourcePanY.value = horizontalCrop.panY;
+    if (document.activeElement !== el.sourceZoom) el.sourceZoom.value = horizontalCrop.zoom;
+    if (document.activeElement !== el.sourceBgBlur) el.sourceBgBlur.value = horizontalCrop.bgBlur ?? 1;
   }
   el.vertPane.classList.toggle('crop-editing', !!ui.cropEditActive);
-  el.origPane.classList.toggle('crop-editing', !!ui.sourceCropEditActive);
-  requestAnimationFrame(() => cropPreview.refresh());
+  el.origPane.classList.toggle('crop-editing', !!ui.horizontalCropEditActive);
+  requestAnimationFrame(() => { cropPreview.refresh(); horizontalPreview.refresh(); });
 
   renderSeekDecor();
   updateChrome();

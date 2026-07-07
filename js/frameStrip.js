@@ -1,7 +1,7 @@
 // frameStrip.js - fixed per-frame strip around the current preview frame
-import { store, uid } from './store.js?v=20260707-indexeddb-autosave';
-import { frameCanvas } from './thumbnails.js?v=20260707-indexeddb-autosave';
-import { frameFromTime, frameStartTime, seekVideoFrame } from './util.js?v=20260707-indexeddb-autosave';
+import { store, uid } from './store.js?v=20260707-horizontal-crop';
+import { frameCanvas } from './thumbnails.js?v=20260707-horizontal-crop';
+import { frameFromTime, frameStartTime, seekVideoFrame } from './util.js?v=20260707-horizontal-crop';
 
 const RADIUS = 10;
 const SLOT_COUNT = RADIUS * 2 + 1;
@@ -361,7 +361,8 @@ function onDoubleClick(e) {
     sourceId: state.source.id,
     in: frameToTime(inFrame, state),
     out: frameToTime(outFrame, state),
-    crop: { ...(ui.crop || { panX: .5, panY: .5, zoom: 1 }) },
+    crop: { ...(ui.crop || { panX: .5, panY: .5, zoom: 1, bgBlur: 1 }) },
+    horizontalCrop: { ...(ui.horizontalCrop || { panX: .5, panY: .5, zoom: 1, bgBlur: 1 }) },
   }));
   store.ui._fromTimeline = true;
   store.select('material', id);

@@ -1,7 +1,7 @@
 // sourceTimeline.js - zoomable, multi-clip source timeline
-import { store, uid } from './store.js?v=20260707-indexeddb-autosave';
-import { generateWindow, spacing } from './thumbnails.js?v=20260707-indexeddb-autosave';
-import { fmtTime, frameFromTime, frameStartTime, makeFrameScrubber, seekVideoFrame } from './util.js?v=20260707-indexeddb-autosave';
+import { store, uid } from './store.js?v=20260707-horizontal-crop';
+import { generateWindow, spacing } from './thumbnails.js?v=20260707-horizontal-crop';
+import { fmtTime, frameFromTime, frameStartTime, makeFrameScrubber, seekVideoFrame } from './util.js?v=20260707-horizontal-crop';
 
 const FOCUS_MARGIN = 0.3;        // extra view beyond a selected clip (fraction of clip len)
 const REGEN_DEBOUNCE = 140;
@@ -289,7 +289,8 @@ function onInnerDblClick(e) {
     sourceId: curSourceId,
     in: nin,
     out: nout,
-    crop: { ...(ui.crop || { panX: .5, panY: .5, zoom: 1 }) },
+    crop: { ...(ui.crop || { panX: .5, panY: .5, zoom: 1, bgBlur: 1 }) },
+    horizontalCrop: { ...(ui.horizontalCrop || { panX: .5, panY: .5, zoom: 1, bgBlur: 1 }) },
   }));
   store.ui._fromTimeline = true;                 // creating shouldn't move the view
   store.select('material', id);

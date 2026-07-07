@@ -1,5 +1,5 @@
 // store.js - central editing state + pub/sub + undo/redo + IndexedDB autosave
-import * as db from './db.js?v=20260707-indexeddb-autosave';
+import * as db from './db.js?v=20260707-horizontal-crop';
 
 const HISTORY_LIMIT = 100;
 const AUTOSAVE_DEBOUNCE = 500;
@@ -10,7 +10,7 @@ function emptyProject() {
     name: 'untitled',
     output: { width: 1080, height: 1920, fps: 30 },
     sources: [],     // {id, fileName, mediaKey, size, lastModified, duration, fps, width, height, hasAudio}
-    materials: [],   // {id, sourceId, in, out, title?, sourceCrop?, crop?} - cutout clips (shelf)
+    materials: [],   // {id, sourceId, in, out, title?, horizontalCrop?, crop?} - cutout clips (shelf)
     outputs: [],     // {id, materialId, crop:{panX,panY,zoom}, texts:[]} - sequence
     bgm: null,
     savedAt: 0,
@@ -22,13 +22,13 @@ function emptyUI() {
     activeSourceId: null,
     selection: { kind: null, id: null },   // kind: 'material' | 'output'
     view: { start: 0, end: 0 },            // source-timeline visible window (sec)
-    crop: { panX: 0.5, panY: 0.5, zoom: 1 }, // draft crop for new materials/preview
+    crop: { panX: 0.5, panY: 0.5, zoom: 1, bgBlur: 1 }, // draft vertical crop
     playRange: null,                        // {start,end} active loop range
     editMaterialId: null,                   // material currently editable on timelines
     editMaterialIds: [],                    // materials currently editable on timelines
     cropEditActive: false,                  // vertical preview crop sliders are visible
-    sourceCrop: { panX: 0.5, panY: 0.5, zoom: 1 },
-    sourceCropEditActive: false,            // source preview crop sliders are visible
+    horizontalCrop: { panX: 0.5, panY: 0.5, zoom: 1, bgBlur: 1 },
+    horizontalCropEditActive: false,         // horizontal preview crop sliders are visible
   };
 }
 
@@ -92,7 +92,11 @@ class Store {
   // updateLive(...) for each frame so the whole gesture is a single undo step.
   beginAction() { this._pushUndo(); this._redo.length = 0; }
 
-  setUI(patch) { Object.assign(this.ui, patch); this._emit(); }
+  setUI(patch) {
+    Object.assign(this.ui, patch);
+    this._emit();
+    this._scheduleSave();
+  }
 
   select(kind, id) {
     this.ui.selection = { kind, id };
@@ -152,7 +156,7 @@ class Store {
     if (!saved?.project) return false;
     this.project = migrate({ ...emptyProject(), ...saved.project });
     this._undo = []; this._redo = [];
-    this.ui = { ...emptyUI(), ...(saved.ui || {}) };
+    this.ui = normalizeUI(saved.ui);
     if (!this.getSource(this.ui.activeSourceId)) this.ui.activeSourceId = this.project.sources[0]?.id || null;
     this._emit();
     const hist = await db.loadHistory().catch(() => null);
@@ -175,8 +179,18 @@ function persistableUI(ui) {
     selection: ui.selection,
     view: ui.view,
     crop: ui.crop,
-    sourceCrop: ui.sourceCrop,
+    horizontalCrop: ui.horizontalCrop,
   };
+}
+
+function normalizeUI(saved = {}) {
+  const ui = { ...emptyUI(), ...(saved || {}) };
+  ui.crop = { ...defaultCrop(), ...(saved.crop || {}) };
+  ui.horizontalCrop = { ...defaultHorizontalCrop(), ...(saved.horizontalCrop || saved.sourceCrop || {}) };
+  delete ui.sourceCrop;
+  ui.cropEditActive = false;
+  ui.horizontalCropEditActive = false;
+  return ui;
 }
 
 // migrate older (v1: clips[]) projects to v2 (materials/outputs)
@@ -191,8 +205,8 @@ function migrate(p) {
   return normalizeProject({ ...p, version: 2, materials, outputs, clips: undefined });
 }
 
-function defaultCrop() { return { panX: .5, panY: .5, zoom: 1, bgBlur: 0 }; }
-function defaultSourceCrop() { return { panX: .5, panY: .5, zoom: 1 }; }
+function defaultCrop() { return { panX: .5, panY: .5, zoom: 1, bgBlur: 1 }; }
+function defaultHorizontalCrop() { return { panX: .5, panY: .5, zoom: 1, bgBlur: 1 }; }
 
 function normalizeProject(p) {
   const outputs = p.outputs || [];
@@ -202,7 +216,8 @@ function normalizeProject(p) {
       m.crop = out?.crop || defaultCrop();
     }
     m.crop = { ...defaultCrop(), ...m.crop };
-    m.sourceCrop = { ...defaultSourceCrop(), ...(m.sourceCrop || {}) };
+    m.horizontalCrop = { ...defaultHorizontalCrop(), ...(m.horizontalCrop || m.sourceCrop || {}) };
+    delete m.sourceCrop;
   }
   for (const o of outputs) delete o.crop;
   return p;

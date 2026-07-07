@@ -1,6 +1,6 @@
 // export.js - deterministic frame export via Mediabunny/WebCodecs.
-import { store } from './store.js?v=20260707-indexeddb-autosave';
-import { freshFileFor } from './fileOpen.js?v=20260707-indexeddb-autosave';
+import { store } from './store.js?v=20260707-horizontal-crop';
+import { freshFileFor } from './fileOpen.js?v=20260707-horizontal-crop';
 import {
   ALL_FORMATS,
   BlobSource,
@@ -14,7 +14,7 @@ import {
   Output,
   canEncodeAudio,
   canEncodeVideo,
-} from './mediabunny.js?v=20260707-indexeddb-autosave';
+} from './mediabunny.js?v=20260707-horizontal-crop';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const even = (v) => Math.max(2, Math.round(v / 2) * 2);
@@ -37,7 +37,7 @@ function clipBounds(project, material, outputFps) {
 function drawFrame(ctx, src, outW, outH, crop) {
   const vw = src.width, vh = src.height;
   if (!vw || !vh) return;
-  const { panX = 0.5, panY = 0.5, zoom = 1, bgBlur = 0 } = crop || {};
+  const { panX = 0.5, panY = 0.5, zoom = 1, bgBlur = 1 } = crop || {};
   const targetAspect = outW / outH;
   const sourceAspect = vw / vh;
 
@@ -81,6 +81,32 @@ function drawFrame(ctx, src, outW, outH, crop) {
   const dw = sw / cropW * outW;
   const dh = sh / cropH * outH;
   ctx.drawImage(src, vx, vy, sw, sh, dx, dy, dw, dh);
+}
+
+function drawHorizontalFrame(ctx, src, outW, outH, crop) {
+  const vw = src.width, vh = src.height;
+  if (!vw || !vh) return;
+  const { panX = 0.5, panY = 0.5, zoom = 1, bgBlur = 1 } = crop || {};
+
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, outW, outH);
+
+  if (bgBlur > 0) {
+    const bgScale = Math.max(outW / vw, outH / vh) * 1.08;
+    const bgW = vw * bgScale, bgH = vh * bgScale;
+    ctx.save();
+    ctx.globalAlpha = clamp(bgBlur, 0, 1);
+    ctx.filter = 'blur(24px)';
+    ctx.drawImage(src, (outW - bgW) / 2, (outH - bgH) / 2, bgW, bgH);
+    ctx.restore();
+  }
+
+  const scale = (outH / vh) * Math.max(0.001, zoom);
+  const dw = vw * scale;
+  const dh = vh * scale;
+  const dx = dw <= outW ? (outW - dw) * panX : -(dw - outW) * panX;
+  const dy = dh <= outH ? (outH - dh) * panY : -(dh - outH) * panY;
+  ctx.drawImage(src, dx, dy, dw, dh);
 }
 
 async function makeSourceSession(source) {
@@ -165,9 +191,9 @@ function outputItems(project) {
 
 function cropForItem(item, cropMode) {
   if (cropMode === 'horizontal') {
-    return { panX: 0.5, panY: 0.5, zoom: 1, bgBlur: 0, ...(item.material.sourceCrop || {}) };
+    return { panX: 0.5, panY: 0.5, zoom: 1, bgBlur: 1, ...(item.material.horizontalCrop || item.material.sourceCrop || {}) };
   }
-  return item.material.crop;
+  return { panX: 0.5, panY: 0.5, zoom: 1, bgBlur: 1, ...(item.material.crop || {}) };
 }
 
 export async function exportProject({ width, height, fps: requestedFps, cropMode = 'vertical', onProgress, onStatus } = {}) {
@@ -247,7 +273,9 @@ export async function exportProject({ width, height, fps: requestedFps, cropMode
           it.bounds.outFrame - 1,
         );
         const sourceCanvas = await getFrameCanvas(session, it.bounds.sourceFps, sourceFrame);
-        drawFrame(ctx, sourceCanvas, outW, outH, cropForItem(it, cropMode));
+        const crop = cropForItem(it, cropMode);
+        if (cropMode === 'horizontal') drawHorizontalFrame(ctx, sourceCanvas, outW, outH, crop);
+        else drawFrame(ctx, sourceCanvas, outW, outH, crop);
         await canvasSource.add(outFrame / fps, frameDur);
 
         outFrame++;

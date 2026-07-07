@@ -1,7 +1,7 @@
 // mediaSession.js - shared Mediabunny frame sessions for preview-oriented exact frame reads
-import { ALL_FORMATS, BlobSource, CanvasSink, Input } from './mediabunny.js?v=20260707-indexeddb-autosave';
-import { fileFor, freshFileFor } from './fileOpen.js?v=20260707-indexeddb-autosave';
-import { frameProbeTime } from './util.js?v=20260707-indexeddb-autosave';
+import { ALL_FORMATS, BlobSource, CanvasSink, Input } from './mediabunny.js?v=20260707-horizontal-crop';
+import { fileFor, freshFileFor } from './fileOpen.js?v=20260707-horizontal-crop';
+import { frameProbeTime } from './util.js?v=20260707-horizontal-crop';
 
 const sessions = new Map(); // key -> { file, input, ready, sink, chain }
 

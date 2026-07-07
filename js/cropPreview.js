@@ -1,5 +1,5 @@
 // cropPreview.js - 9:16 canvas preview of the active source with crop/pan/zoom
-import { store } from './store.js?v=20260707-indexeddb-autosave';
+import { store } from './store.js?v=20260707-horizontal-crop';
 
 let canvas, ctx, video;
 let raf = 0;
@@ -47,7 +47,7 @@ function resize() {
 // crop config: selected output's crop if any, else the UI draft crop
 function currentCrop() {
   const r = store.resolve();
-  return (r && r.crop) || store.ui.crop || { panX: 0.5, panY: 0.5, zoom: 1 };
+  return (r && r.crop) || store.ui.crop || { panX: 0.5, panY: 0.5, zoom: 1, bgBlur: 1 };
 }
 
 function draw() {
@@ -89,7 +89,7 @@ function drawBlurBackground(ctx, source, W, H, amount) {
 function drawCropped(ctx, source, W, H, crop) {
   const { w: vw, h: vh } = sourceSize(source);
   if (!vw || !vh) return;
-  const { panX = 0.5, panY = 0.5, zoom = 1, bgBlur = 0 } = crop || {};
+  const { panX = 0.5, panY = 0.5, zoom = 1, bgBlur = 1 } = crop || {};
   const targetAspect = W / H;
   const sourceAspect = vw / vh;
 

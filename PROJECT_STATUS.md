@@ -24,7 +24,7 @@ ViralCut no longer has a project-folder save/open workflow.
 - `New` asks twice when work exists, then clears autosave, history, saved media, and in-memory object URLs.
 - Export always uses browser download behavior; it does not write into a chosen project folder.
 - Video files can be added by clicking `Add Video` or by dropping video files on the `Add Video` button.
-- Export layout is selected after pressing `ExportVideo`: vertical 9:16, horizontal 16:9, or both.
+- Export layout is selected with buttons after pressing `ExportVideo`: vertical 9:16, horizontal 16:9, or both.
 
 ## Current Architecture
 
@@ -47,6 +47,7 @@ The central store is [js/store.js](js/store.js). Selection is a single `{ kind, 
 - [js/thumbnails.js](js/thumbnails.js): source timeline thumbnail generation.
 - [js/sourceTimeline.js](js/sourceTimeline.js): zoomable source timeline, material bands, source playhead.
 - [js/frameStrip.js](js/frameStrip.js): per-frame strip around the current preview frame.
+- [js/horizontalPreview.js](js/horizontalPreview.js): 16:9 canvas preview with horizontal crop / pan / zoom / blur.
 - [js/cropPreview.js](js/cropPreview.js): 9:16 canvas crop preview.
 - [js/previewSequence.js](js/previewSequence.js): deterministic output-sequence preview via Mediabunny frame reads.
 - [js/export.js](js/export.js): deterministic vertical/horizontal frame export through Mediabunny `Output`, `CanvasSource`, and `AudioSampleSource`.
@@ -87,13 +88,15 @@ Materials and preview behavior:
 - Material thumbnails do not show delete buttons; deletion is only through `Delete` / `Backspace` with confirmation.
 - Material thumbnail wheel changes card size.
 - Double-clicking material title text edits it inline. Double-clicking elsewhere on the card plays the material.
+- The horizontal preview is a 16:9 canvas. It fits the source by height at default zoom, regardless of source aspect ratio, then allows pan / zoom / blur adjustment.
 - The 9:16 crop preview fits within its column without reserving a wide blank side area.
-- Source preview crop and vertical preview crop have independent edit modes and independent saved settings.
+- Horizontal preview crop and vertical preview crop have independent edit modes and independent saved settings.
 - Double-clicking either preview toggles its crop edit mode.
 - Crop sliders appear only while that preview is in crop edit mode, with a reset button.
 - Crop sliders are laid out below the preview surface and must not overlap video/canvas content.
 - When crop controls appear or disappear, the vertical preview canvas is resized to the remaining preview surface so the UI does not clip the canvas.
-- Source preview playback remains `object-fit: contain`; separator changes must not crop the source video.
+- The native source `<video>` is hidden and kept as a decode/playback source; the visible source preview is the horizontal canvas.
+- The horizontal and vertical crop blur (`B`) defaults to `1`.
 - In normal mode, hover shows `Double-click to edit crop`.
 
 Edit area behavior:
@@ -170,10 +173,20 @@ Follow-up changes:
 
 - `New` asks twice before clearing an edit when any source, material, or output exists.
 - `Add Video` blinks red while no video has been added.
-- The export layout dropdown was removed. `ExportVideo` now asks for `vertical`, `horizontal`, or `both` after the button is pressed.
+- The export layout dropdown was removed. `ExportVideo` now opens an in-app button dialog for `Vertical 9:16`, `Horizontal 16:9`, or `Both`.
 - The overview timeline is thinner and the cut-edit timeline is taller and visually emphasized.
 - The cut-edit timeline blinks when the active source has no cuts.
 - Hovering the cut-edit timeline shows simple English guidance: double-click to cut, or double-click a cut to edit.
+
+### Horizontal Crop Preview
+
+Follow-up changes:
+
+- Replaced the visible source preview surface with a 16:9 canvas.
+- Horizontal preview uses height-fit placement at default zoom, so portrait or non-16:9 sources are placed upright inside a 16:9 canvas instead of relying on native video aspect display.
+- Horizontal crop settings are stored per material as `horizontalCrop` and are also copied when creating new materials from either timeline.
+- Horizontal export uses the same height-fit crop model as the horizontal preview.
+- Vertical and horizontal crop blur defaults are both `1`.
 
 ## Current Known Issue
 

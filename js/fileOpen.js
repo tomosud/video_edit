@@ -1,8 +1,8 @@
-// fileOpen.js - browser source media registry with IndexedDB recovery.
-import { store, uid } from './store.js?v=20260707-indexeddb-autosave';
-import * as db from './db.js?v=20260707-indexeddb-autosave';
-import { hashKey } from './util.js?v=20260707-indexeddb-autosave';
-import { readMediaInfo } from './mediaInfo.js?v=20260707-indexeddb-autosave';
+﻿// fileOpen.js - browser source media registry with IndexedDB recovery.
+import { store, uid } from './store.js?v=20260707-horizontal-crop';
+import * as db from './db.js?v=20260707-horizontal-crop';
+import { hashKey } from './util.js?v=20260707-horizontal-crop';
+import { readMediaInfo } from './mediaInfo.js?v=20260707-horizontal-crop';
 
 const media = new Map(); // sourceId -> { file, url, handle }
 let addVideoInFlight = null;
@@ -221,3 +221,4 @@ async function probeFps(url) {
 
 export async function relinkAll() { return []; }
 export async function relinkOne() { return false; }
+

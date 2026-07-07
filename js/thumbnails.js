@@ -1,5 +1,5 @@
 // thumbnails.js - Mediabunny CanvasSink thumbnails, memory-only
-import { getVideoFrameCanvas } from './mediaSession.js?v=20260707-indexeddb-autosave';
+import { getVideoFrameCanvas } from './mediaSession.js?v=20260707-horizontal-crop';
 
 const THUMB_H = 132;
 const TARGET_SPACING = 200;

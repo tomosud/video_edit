@@ -1,7 +1,7 @@
 // previewSequence.js - deterministic output-sequence preview via Mediabunny exact frames
-import { store } from './store.js?v=20260707-indexeddb-autosave';
-import { getVideoFrameCanvas } from './mediaSession.js?v=20260707-indexeddb-autosave';
-import * as cropPreview from './cropPreview.js?v=20260707-indexeddb-autosave';
+import { store } from './store.js?v=20260707-horizontal-crop';
+import { getVideoFrameCanvas } from './mediaSession.js?v=20260707-horizontal-crop';
+import * as cropPreview from './cropPreview.js?v=20260707-horizontal-crop';
 
 let token = 0;
 let playing = false;
