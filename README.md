@@ -2,7 +2,13 @@
 
 ViralCut is a browser-only temporary video editing tool for making short vertical and horizontal clips from local video files.
 
-Repository: [tomosud/video_edit](https://github.com/tomosud/video_edit)
+https://tomosud.github.io/video_edit/
+
+
+
+https://github.com/user-attachments/assets/2f78c3a2-bd52-47a0-9cd5-3c45e27d1c89
+
+
 
 ## Features
 
