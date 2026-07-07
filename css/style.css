@@ -69,7 +69,17 @@ body {
   display: flex; align-items: center; gap: 8px;
   background: var(--panel); border-radius: var(--radius); padding: 0 12px;
 }
-.brand { font-weight: 700; font-size: 16px; color: var(--accent); margin-right: 6px; }
+.brand { font-weight: 700; font-size: 16px; color: var(--accent); }
+.repo-link {
+  color: #b9c7de;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 7px;
+  font-size: 12px;
+  line-height: 1;
+  text-decoration: none;
+}
+.repo-link:hover { color: var(--text); border-color: var(--accent); background: var(--panel-2); }
 .sep { width: 1px; height: 24px; background: var(--line); margin: 0 4px; }
 .spacer { flex: 1; }
 .status { color: var(--text-dim); font-size: 13px; }
