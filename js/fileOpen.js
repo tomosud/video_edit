@@ -1,7 +1,8 @@
-// fileOpen.js - temporary in-browser source media registry.
-import { store, uid } from './store.js?v=20260707-mediabunny-single';
-import { hashKey } from './util.js?v=20260707-mediabunny-single';
-import { readMediaInfo } from './mediaInfo.js?v=20260707-mediabunny-single';
+// fileOpen.js - browser source media registry with IndexedDB recovery.
+import { store, uid } from './store.js?v=20260707-indexeddb-autosave';
+import * as db from './db.js?v=20260707-indexeddb-autosave';
+import { hashKey } from './util.js?v=20260707-indexeddb-autosave';
+import { readMediaInfo } from './mediaInfo.js?v=20260707-indexeddb-autosave';
 
 const media = new Map(); // sourceId -> { file, url, handle }
 let addVideoInFlight = null;
@@ -15,6 +16,10 @@ export function clear() {
     if (entry.url) URL.revokeObjectURL(entry.url);
   }
   media.clear();
+}
+
+export async function clearSavedMedia() {
+  await db.clearMedia();
 }
 
 function register(sourceId, file, handle = null) {
@@ -88,6 +93,7 @@ async function addOneVideo(file, handle = null) {
     s.mediaKey === mediaKey || (s.fileName === file.name && s.size === file.size));
   if (existing) {
     register(existing.id, file, handle);
+    db.saveMedia(existing.id, file).catch((err) => console.warn('media save failed', err));
     store.setUI({ activeSourceId: existing.id });
     return existing.id;
   }
@@ -120,7 +126,23 @@ async function addOneVideo(file, handle = null) {
     });
     ui.activeSourceId = id;
   });
+  db.saveMedia(id, file).catch((err) => console.warn('media save failed', err));
   return id;
+}
+
+export async function restoreSavedMedia() {
+  const restored = [];
+  for (const source of store.get().sources) {
+    if (media.has(source.id)) {
+      restored.push(source.id);
+      continue;
+    }
+    const file = await db.loadMedia(source.id).catch(() => null);
+    if (!file) continue;
+    register(source.id, file, null);
+    restored.push(source.id);
+  }
+  return restored;
 }
 
 function pickWithInput() {
@@ -199,4 +221,3 @@ async function probeFps(url) {
 
 export async function relinkAll() { return []; }
 export async function relinkOne() { return false; }
-

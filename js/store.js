@@ -1,4 +1,6 @@
-// store.js - central in-memory editing state + pub/sub + undo/redo
+// store.js - central editing state + pub/sub + undo/redo + IndexedDB autosave
+import * as db from './db.js?v=20260707-indexeddb-autosave';
+
 const HISTORY_LIMIT = 100;
 const AUTOSAVE_DEBOUNCE = 500;
 
@@ -7,7 +9,7 @@ function emptyProject() {
     version: 2,
     name: 'untitled',
     output: { width: 1080, height: 1920, fps: 30 },
-    sources: [],     // {id, fileName, mediaKey, size, lastModified, duration, fps, width, height, hasAudio, handleKey}
+    sources: [],     // {id, fileName, mediaKey, size, lastModified, duration, fps, width, height, hasAudio}
     materials: [],   // {id, sourceId, in, out, title?, sourceCrop?, crop?} - cutout clips (shelf)
     outputs: [],     // {id, materialId, crop:{panX,panY,zoom}, texts:[]} - sequence
     bgm: null,
@@ -120,12 +122,20 @@ class Store {
     this._emit(); this._scheduleSave(); this._persistHistory();
   }
 
-  // ---- no persistence: edits live only in this browser session ----
+  // ---- IndexedDB persistence ----
   _scheduleSave() {
     clearTimeout(this._saveTimer);
-    this._saveTimer = setTimeout(() => {}, AUTOSAVE_DEBOUNCE);
+    this._saveTimer = setTimeout(() => {
+      db.saveAutosave({
+        project: this.project,
+        ui: persistableUI(this.ui),
+        savedAt: Date.now(),
+      }).catch((err) => console.warn('autosave failed', err));
+    }, AUTOSAVE_DEBOUNCE);
   }
-  _persistHistory() {}
+  _persistHistory() {
+    db.saveHistory(this.historyState()).catch(() => {});
+  }
 
   historyState() {
     return { undo: this._undo, redo: this._redo };
@@ -138,7 +148,16 @@ class Store {
   }
 
   async restore() {
-    return false;
+    const saved = await db.loadAutosave();
+    if (!saved?.project) return false;
+    this.project = migrate({ ...emptyProject(), ...saved.project });
+    this._undo = []; this._redo = [];
+    this.ui = { ...emptyUI(), ...(saved.ui || {}) };
+    if (!this.getSource(this.ui.activeSourceId)) this.ui.activeSourceId = this.project.sources[0]?.id || null;
+    this._emit();
+    const hist = await db.loadHistory().catch(() => null);
+    this.loadHistoryState(hist);
+    return true;
   }
 
   load(project) {
@@ -148,6 +167,16 @@ class Store {
     this.ui.activeSourceId = this.project.sources[0]?.id || null;
     this._emit(); this._scheduleSave(); this._persistHistory();
   }
+}
+
+function persistableUI(ui) {
+  return {
+    activeSourceId: ui.activeSourceId,
+    selection: ui.selection,
+    view: ui.view,
+    crop: ui.crop,
+    sourceCrop: ui.sourceCrop,
+  };
 }
 
 // migrate older (v1: clips[]) projects to v2 (materials/outputs)

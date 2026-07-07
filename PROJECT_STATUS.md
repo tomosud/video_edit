@@ -6,7 +6,7 @@ This file is the single source of truth for the current implementation. Older pl
 
 ## What This App Is
 
-ViralCut is a browser-only temporary video editing tool.
+ViralCut is a browser-only lightweight video editing tool.
 
 - Input: local video files selected or dropped into the browser.
 - Main workflow: add videos, create source clips, arrange them as output clips, crop, export MP4.
@@ -14,18 +14,17 @@ ViralCut is a browser-only temporary video editing tool.
 - Core code style: vanilla JavaScript ES modules, no bundler.
 - Current media stack: Mediabunny + WebCodecs for metadata, frame extraction, and deterministic export; HTMLVideoElement is still used for the interactive source preview and native playback.
 
-## Temporary Editing Model
+## Browser Persistence Model
 
 ViralCut no longer has a project-folder save/open workflow.
 
-- `New` clears all in-memory editing state and revokes selected video object URLs.
-- Startup always begins from a blank temporary edit.
-- The app does not autosave projects, file handles, history, or source links.
-- The old IndexedDB database name `viralcut` is deleted on startup when the browser allows it.
+- Editing state is autosaved to IndexedDB under the `viralcut` database.
+- Added video `File` objects are also stored in IndexedDB when the browser allows it.
+- Reload restores the last edit and re-registers saved video object URLs.
+- `New` asks twice when work exists, then clears autosave, history, saved media, and in-memory object URLs.
 - Export always uses browser download behavior; it does not write into a chosen project folder.
-- Refreshing or closing the tab discards the edit. Users must export the finished video they want to keep.
 - Video files can be added by clicking `Add Video` or by dropping video files on the `Add Video` button.
-- Export layout is selected from the header: vertical 9:16, horizontal 16:9, or both.
+- Export layout is selected after pressing `ExportVideo`: vertical 9:16, horizontal 16:9, or both.
 
 ## Current Architecture
 
@@ -42,7 +41,7 @@ The central store is [js/store.js](js/store.js). Selection is a single `{ kind, 
 ### Main Modules
 
 - [js/app.js](js/app.js): app wiring, source preview transport, range playback, selection side effects, seek bar, export command.
-- [js/fileOpen.js](js/fileOpen.js): temporary source file selection/drop registration, object URL management, fallback probing.
+- [js/fileOpen.js](js/fileOpen.js): source file selection/drop registration, IndexedDB media persistence, object URL management, fallback probing.
 - [js/mediaInfo.js](js/mediaInfo.js): Mediabunny-based metadata probing.
 - [js/mediaSession.js](js/mediaSession.js): shared Mediabunny `Input` / `CanvasSink` sessions for exact frame reads.
 - [js/thumbnails.js](js/thumbnails.js): source timeline thumbnail generation.
@@ -127,15 +126,15 @@ Mediabunny behavior that matters:
 
 This section records the changes made on 2026-07-07.
 
-### Temporary Tool Conversion
+### Browser Autosave Conversion
 
-Updated [index.html](index.html), [js/app.js](js/app.js), [js/fileOpen.js](js/fileOpen.js), and [js/projectStore.js](js/projectStore.js):
+Updated [index.html](index.html), [js/app.js](js/app.js), [js/store.js](js/store.js), [js/db.js](js/db.js), [js/fileOpen.js](js/fileOpen.js), and [js/projectStore.js](js/projectStore.js):
 
 - Removed the project-folder open/save workflow from the active UI.
-- `New` now clears the current in-memory edit instead of choosing a folder.
-- Startup resets to a blank temporary edit.
-- Old `viralcut` IndexedDB data is deleted on startup when possible.
-- File handles and project history are no longer saved.
+- `New` now clears the browser autosave instead of choosing a folder.
+- Startup restores the last autosaved edit from IndexedDB when available.
+- Project state, undo/redo history, and added video `File` objects are saved in IndexedDB.
+- File System Access handles are still not saved.
 - Export always uses browser download behavior.
 
 ### Video Add Drop Target
@@ -144,8 +143,8 @@ Updated [index.html](index.html), [css/style.css](css/style.css), [js/app.js](js
 
 - `Add Video` remains enabled from startup.
 - Clicking `Add Video` can select one or more videos.
-- Dropping video files on `Add Video` adds them to the current temporary edit.
-- Selected/dropped files live only in the current browser session.
+- Dropping video files on `Add Video` adds them to the current edit.
+- Selected/dropped files are saved to IndexedDB for reload recovery.
 
 ### Export Layout Selection
 
@@ -164,6 +163,17 @@ Follow-up fix after browser testing:
 - Mediabunny was also imported directly from multiple modules with cache-busted URLs, which triggered its `Mediabunny was loaded twice` warning and broke thumbnail/frame-read behavior.
 - Added [js/mediabunny.js](js/mediabunny.js) as the single Mediabunny import point.
 - All app module imports now use one cache-buster value, while `mediabunny.min.js` itself is imported once without a query string.
+
+### UI Flow Adjustments
+
+Follow-up changes:
+
+- `New` asks twice before clearing an edit when any source, material, or output exists.
+- `Add Video` blinks red while no video has been added.
+- The export layout dropdown was removed. `ExportVideo` now asks for `vertical`, `horizontal`, or `both` after the button is pressed.
+- The overview timeline is thinner and the cut-edit timeline is taller and visually emphasized.
+- The cut-edit timeline blinks when the active source has no cuts.
+- Hovering the cut-edit timeline shows simple English guidance: double-click to cut, or double-click a cut to edit.
 
 ## Current Known Issue
 

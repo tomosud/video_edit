@@ -1,7 +1,7 @@
 // outputSequence.js - output clips (editing area): drop, reorder, select, play from item
-import { store, uid } from './store.js?v=20260707-mediabunny-single';
-import { cardThumb, cloneCanvas } from './thumbnails.js?v=20260707-mediabunny-single';
-import { fmtDur } from './util.js?v=20260707-mediabunny-single';
+import { store, uid } from './store.js?v=20260707-indexeddb-autosave';
+import { cardThumb, cloneCanvas } from './thumbnails.js?v=20260707-indexeddb-autosave';
+import { fmtDur } from './util.js?v=20260707-indexeddb-autosave';
 
 let listEl, totalEl;
 let onPlay = () => {};

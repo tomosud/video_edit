@@ -6,7 +6,7 @@ export function workspaceId() { return null; }
 export function sourceHandleKey(sourceId) { return `temporary:${sourceId}:handle`; }
 
 function removed() {
-  throw new Error('Project folder save/open was removed. ViralCut now keeps edits only in the current browser session.');
+  throw new Error('Project folder save/open was removed. ViralCut now restores edits from browser IndexedDB autosave.');
 }
 
 export async function newProject() { removed(); }
@@ -17,4 +17,3 @@ export async function saveHistory() {}
 export async function loadHistory() { return null; }
 export async function saveOutputBlob() { removed(); }
 export async function readSubtitle() { return null; }
-

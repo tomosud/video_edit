@@ -1,5 +1,5 @@
 // mediaInfo.js - Mediabunny-backed source metadata probing
-import { ALL_FORMATS, BlobSource, Input } from './mediabunny.js?v=20260707-mediabunny-single';
+import { ALL_FORMATS, BlobSource, Input } from './mediabunny.js?v=20260707-indexeddb-autosave';
 
 const COMMON_FPS = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 120];
 

@@ -1,6 +1,6 @@
 // trimTimeline.js - source strip: IN/OUT handles, playhead, zoom, click-to-seek
-import { store } from './store.js?v=20260707-mediabunny-single';
-import { generateStrip } from './thumbnails.js?v=20260707-mediabunny-single';
+import { store } from './store.js?v=20260707-indexeddb-autosave';
+import { generateStrip } from './thumbnails.js?v=20260707-indexeddb-autosave';
 
 let els, video;
 let duration = 0;

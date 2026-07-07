@@ -1,23 +1,24 @@
 // app.js - entry: wire modules, selection side-effects, ranged playback, temporary export
-import { store } from './store.js?v=20260707-mediabunny-single';
-import * as fileOpen from './fileOpen.js?v=20260707-mediabunny-single';
-import * as cropPreview from './cropPreview.js?v=20260707-mediabunny-single';
-import * as srcTimeline from './sourceTimeline.js?v=20260707-mediabunny-single';
-import * as frameStrip from './frameStrip.js?v=20260707-mediabunny-single';
-import * as shelf from './materialShelf.js?v=20260707-mediabunny-single';
-import * as outSeq from './outputSequence.js?v=20260707-mediabunny-single';
-import { exportProject, downloadBlob } from './export.js?v=20260707-mediabunny-single';
-import { fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js?v=20260707-mediabunny-single';
+import { store } from './store.js?v=20260707-indexeddb-autosave';
+import * as fileOpen from './fileOpen.js?v=20260707-indexeddb-autosave';
+import * as db from './db.js?v=20260707-indexeddb-autosave';
+import * as cropPreview from './cropPreview.js?v=20260707-indexeddb-autosave';
+import * as srcTimeline from './sourceTimeline.js?v=20260707-indexeddb-autosave';
+import * as frameStrip from './frameStrip.js?v=20260707-indexeddb-autosave';
+import * as shelf from './materialShelf.js?v=20260707-indexeddb-autosave';
+import * as outSeq from './outputSequence.js?v=20260707-indexeddb-autosave';
+import { exportProject, downloadBlob } from './export.js?v=20260707-indexeddb-autosave';
+import { fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js?v=20260707-indexeddb-autosave';
 
 const $ = (id) => document.getElementById(id);
 const el = {};
 ['btnNewProject','btnAddVideo','sourceSelect','btnUndo','btnRedo',
- 'exportMode','btnExport','status','srcVideo','srcEmpty','origPane','origTime','btnPlay','btnLoop','vertPane','vertCanvas',
+ 'btnExport','status','srcVideo','srcEmpty','origPane','origTime','btnPlay','btnLoop','vertPane','vertCanvas',
  'panX','panY','zoom','bgBlur','verticalCropReset',
  'sourcePanX','sourcePanY','sourceZoom','sourceCropReset',
  'overlay','overlayMsg','overlayProg',
  'confirm','confirmTitle','confirmMsg','confirmOk','confirmCancel',
- 'tlScroll','tlInner','thumbRow','clipBands','tlPlayhead','frameStrip','srcRange',
+ 'srcPane','tlScroll','tlInner','thumbRow','clipBands','tlPlayhead','frameStrip','srcRange',
  'tlOverview','ovThumbRow','ovClips','ovWindow','ovPlayhead',
  'seekBar','seekMarks','seekRange','seekFill','seekHead','frameInfo',
  'workPane','shelf','shelfCount','outList','totalDur','btnPlayOut','btnStopOut'].forEach(id => el[id] = $(id));
@@ -50,14 +51,25 @@ function init() {
 }
 
 async function bootstrap() {
-  await clearLocalData();
-  resetTemporaryEdit('Temporary edit ready');
+  if (await store.restore()) {
+    const restored = await fileOpen.restoreSavedMedia();
+    refreshStateViews();
+    setStatus(restored.length ? 'Restored edit' : 'Restored edit; video files are missing');
+  } else {
+    await resetTemporaryEdit('Temporary edit ready', { clearSaved: true });
+  }
   updateChrome();
 }
 
 // ---------- menu ----------
 function wireMenu() {
-  el.btnNewProject.onclick = () => resetTemporaryEdit('State cleared');
+  el.btnNewProject.onclick = guard(async () => {
+    if (hasWork()) {
+      if (!await askConfirm('Start a new edit?\nCurrent work will be lost.', 'New', 'New Edit')) return;
+      if (!await askConfirm('Confirm again.\nCurrent work will be lost.', 'New', 'New Edit')) return;
+    }
+    await resetTemporaryEdit('State cleared', { clearSaved: true });
+  });
   el.btnAddVideo.onclick = guard(async () => {
     el.btnAddVideo.disabled = true;
     try {
@@ -71,23 +83,27 @@ function wireMenu() {
   el.sourceSelect.onchange = () => store.setUI({ activeSourceId: el.sourceSelect.value });
 }
 
-function resetTemporaryEdit(message) {
+async function resetTemporaryEdit(message, { clearSaved = false } = {}) {
   stopSequence();
   try { el.srcVideo.pause(); } catch { /* ignore */ }
   activeUrl = null;
   pendingSeek = null;
   lastSelKey = '';
   fileOpen.clear();
+  if (clearSaved) {
+    await Promise.all([
+      db.clearAutosave(),
+      db.clearHistory(),
+      fileOpen.clearSavedMedia(),
+    ]);
+  }
   store.load({ name: 'temporary' });
   setStatus(message);
 }
 
-async function clearLocalData() {
-  if (!('indexedDB' in window)) return;
-  await new Promise((resolve) => {
-    const req = indexedDB.deleteDatabase('viralcut');
-    req.onsuccess = req.onerror = req.onblocked = () => resolve();
-  });
+function hasWork() {
+  const p = store.get();
+  return !!(p.sources.length || p.materials.length || p.outputs.length);
 }
 
 function wireVideoDrop() {
@@ -547,7 +563,7 @@ function wireShortcuts() {
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); store.undo(); }
     else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); store.redo(); }
-    else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); setStatus('This is a temporary edit; use Export to write a video'); }
+    else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); setStatus('Autosave is active; use Export to write a video'); }
     else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
     else if (e.key === ' ') {
       e.preventDefault();
@@ -568,7 +584,8 @@ function wireConfirm() {
   el.confirmCancel.onclick = () => closeConfirm(false);
   el.confirm.addEventListener('pointerdown', (e) => { if (e.target === el.confirm) closeConfirm(false); });
 }
-function askConfirm(message, okLabel = 'Delete') {
+function askConfirm(message, okLabel = 'Delete', title = 'Confirm Delete') {
+  el.confirmTitle.textContent = title;
   el.confirmMsg.textContent = message;
   el.confirmOk.textContent = okLabel;
   el.confirm.hidden = false;
@@ -636,6 +653,9 @@ function prepareExportSettings() {
   }).filter(it => it?.source);
   if (!items.length) return null;
 
+  const mode = selectExportMode();
+  if (!mode) return null;
+
   const currentName = p.exportName || p.name || 'viralcut';
   const requested = prompt('Export file name', stripMp4(currentName));
   if (requested == null) return null;
@@ -643,7 +663,6 @@ function prepareExportSettings() {
   const sources = [...new Map(items.map(it => [it.source.id, it.source])).values()];
   const fps = resolveExportFps(sources, p.output.fps || 30);
   if (!fps) return null;
-  const mode = el.exportMode.value || 'vertical';
   const targets = exportTargets(mode, baseName, sources);
 
   store.update((project) => {
@@ -652,6 +671,17 @@ function prepareExportSettings() {
   }, { commit: false });
 
   return { fps, targets };
+}
+
+function selectExportMode() {
+  const picked = prompt('Export ratio\nType: vertical, horizontal, or both', 'vertical');
+  if (picked == null) return null;
+  const value = picked.trim().toLowerCase();
+  if (['vertical', 'v', '9:16', '916'].includes(value)) return 'vertical';
+  if (['horizontal', 'h', '16:9', '169'].includes(value)) return 'horizontal';
+  if (['both', 'all'].includes(value)) return 'both';
+  alert('Type vertical, horizontal, or both');
+  return null;
 }
 
 function resolveExportFps(sources, fallback) {
@@ -801,7 +831,10 @@ function bindVideo(ui) {
 
 function updateChrome() {
   const p = store.get();
+  const activeHasCuts = p.materials.some(m => m.sourceId === store.ui.activeSourceId);
   el.btnAddVideo.disabled = false;
+  el.btnAddVideo.classList.toggle('need-video', !p.sources.length);
+  el.srcPane.classList.toggle('no-cuts', !!p.sources.length && !activeHasCuts);
   el.sourceSelect.disabled = !p.sources.length;
   el.btnExport.disabled = !p.outputs.length;
   el.btnPlayOut.disabled = !p.outputs.length;

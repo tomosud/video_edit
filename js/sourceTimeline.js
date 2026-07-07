@@ -1,7 +1,7 @@
 // sourceTimeline.js - zoomable, multi-clip source timeline
-import { store, uid } from './store.js?v=20260707-mediabunny-single';
-import { generateWindow, spacing } from './thumbnails.js?v=20260707-mediabunny-single';
-import { fmtTime, frameFromTime, frameStartTime, makeFrameScrubber, seekVideoFrame } from './util.js?v=20260707-mediabunny-single';
+import { store, uid } from './store.js?v=20260707-indexeddb-autosave';
+import { generateWindow, spacing } from './thumbnails.js?v=20260707-indexeddb-autosave';
+import { fmtTime, frameFromTime, frameStartTime, makeFrameScrubber, seekVideoFrame } from './util.js?v=20260707-indexeddb-autosave';
 
 const FOCUS_MARGIN = 0.3;        // extra view beyond a selected clip (fraction of clip len)
 const REGEN_DEBOUNCE = 140;

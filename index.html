@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ViralCut - Vertical Video Editor</title>
   <script src="lib/coi-serviceworker.js"></script>
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=20260707-indexeddb-autosave">
 </head>
 <body>
   <div id="app">
@@ -20,12 +20,7 @@
       <button id="btnUndo" class="btn" disabled title="Ctrl+Z">Undo</button>
       <button id="btnRedo" class="btn" disabled title="Ctrl+Shift+Z">Redo</button>
       <span class="sep"></span>
-      <select id="exportMode" class="sel export-mode" title="Export layout">
-        <option value="vertical">Vertical 9:16</option>
-        <option value="horizontal">Horizontal 16:9</option>
-        <option value="both">Both</option>
-      </select>
-      <button id="btnExport" class="btn btn-accent" disabled>Export</button>
+      <button id="btnExport" class="btn btn-accent" disabled>ExportVideo</button>
       <span class="spacer"></span>
       <span id="status" class="status">Temporary edit ready</span>
     </header>
@@ -48,6 +43,7 @@
           <div id="thumbRow" class="thumb-row"></div>
           <div id="clipBands" class="clip-bands"></div>
           <div id="tlPlayhead" class="playhead"></div>
+          <div class="timeline-help">Double-click to cut.<br>Double-click a cut to edit.</div>
         </div>
       </div>
       <canvas id="frameStrip" class="frame-strip" title="Frames near the current position. Click to seek, double-click to edit material"></canvas>
@@ -143,6 +139,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260707-mediabunny-single"></script>
+  <script type="module" src="js/app.js?v=20260707-indexeddb-autosave"></script>
 </body>
 </html>

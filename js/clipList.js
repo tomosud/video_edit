@@ -1,7 +1,7 @@
 // clipList.js - output clip cards: add, select, delete, drag-reorder
-import { store, uid } from './store.js?v=20260707-mediabunny-single';
-import { singleThumb } from './thumbnails.js?v=20260707-mediabunny-single';
-import { fmtDur } from './util.js?v=20260707-mediabunny-single';
+import { store, uid } from './store.js?v=20260707-indexeddb-autosave';
+import { singleThumb } from './thumbnails.js?v=20260707-indexeddb-autosave';
+import { fmtDur } from './util.js?v=20260707-indexeddb-autosave';
 
 let listEl, totalEl;
 const thumbCache = new Map(); // clipId -> dataURL

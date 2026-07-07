@@ -1,7 +1,7 @@
-// db.js - IndexedDB wrapper: autosave, handles, history, model/thumb cache
+// db.js - IndexedDB wrapper: autosave, media files, history, model/thumb cache
 const DB_NAME = 'viralcut';
-const DB_VERSION = 1;
-const STORES = ['autosave', 'handles', 'history', 'models', 'thumbs'];
+const DB_VERSION = 2;
+const STORES = ['autosave', 'handles', 'history', 'media', 'models', 'thumbs'];
 
 let _db = null;
 
@@ -49,10 +49,20 @@ export function del(store, key) {
   return tx(store, 'readwrite', (os) => os.delete(key));
 }
 
+export function clear(store) {
+  return tx(store, 'readwrite', (os) => os.clear());
+}
+
 // --- convenience ---
 export const loadAutosave   = () => get('autosave', 'current');
 export const saveAutosave   = (state) => set('autosave', 'current', state);
+export const clearAutosave  = () => del('autosave', 'current');
 export const loadHistory    = () => get('history', 'current');
 export const saveHistory    = (h) => set('history', 'current', h);
+export const clearHistory   = () => del('history', 'current');
+export const saveMedia      = (sourceId, file) => set('media', sourceId, file);
+export const loadMedia      = (sourceId) => get('media', sourceId);
+export const deleteMedia    = (sourceId) => del('media', sourceId);
+export const clearMedia     = () => clear('media');
 export const saveHandle     = (key, handle) => set('handles', key, handle);
 export const loadHandle      = (key) => get('handles', key);
