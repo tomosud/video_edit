@@ -1,9 +1,10 @@
 # ViralCut
 
 ブラウザだけで動く、シンプルな動画編集アプリ。
-
 プロジェクトの保存はできません。横型、縦型動画を同時に編集できます。
 
+A simple video editing app that runs entirely in your browser.
+You cannot save projects. You can edit landscape and portrait videos at the same time.
 
 <img width="1906" height="942" alt="image" src="https://github.com/user-attachments/assets/fec2bf93-2fd1-459a-8350-865cc6aac28e" />
 
