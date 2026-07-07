@@ -1,19 +1,18 @@
-// app.js - entry: wire modules, selection side-effects, ranged playback, persistence
-import { store } from './store.js?v=20260630-relink-folder';
-import * as projectStore from './projectStore.js?v=20260630-relink-folder';
-import * as fileOpen from './fileOpen.js?v=20260630-relink-folder';
-import * as cropPreview from './cropPreview.js?v=20260630-relink-folder';
-import * as srcTimeline from './sourceTimeline.js?v=20260630-relink-folder';
-import * as frameStrip from './frameStrip.js?v=20260630-relink-folder';
-import * as shelf from './materialShelf.js?v=20260630-relink-folder';
-import * as outSeq from './outputSequence.js?v=20260630-relink-folder';
-import { exportProject, downloadBlob } from './export.js?v=20260630-relink-folder';
-import { fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js?v=20260630-relink-folder';
+// app.js - entry: wire modules, selection side-effects, ranged playback, temporary export
+import { store } from './store.js?v=20260707-mediabunny-single';
+import * as fileOpen from './fileOpen.js?v=20260707-mediabunny-single';
+import * as cropPreview from './cropPreview.js?v=20260707-mediabunny-single';
+import * as srcTimeline from './sourceTimeline.js?v=20260707-mediabunny-single';
+import * as frameStrip from './frameStrip.js?v=20260707-mediabunny-single';
+import * as shelf from './materialShelf.js?v=20260707-mediabunny-single';
+import * as outSeq from './outputSequence.js?v=20260707-mediabunny-single';
+import { exportProject, downloadBlob } from './export.js?v=20260707-mediabunny-single';
+import { fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js?v=20260707-mediabunny-single';
 
 const $ = (id) => document.getElementById(id);
 const el = {};
-['btnNewProject','btnOpenProject','btnAddVideo','sourceSelect','btnRelinkMissing','btnUndo','btnRedo',
- 'btnExport','status','srcVideo','srcEmpty','origPane','origTime','btnPlay','btnLoop','vertPane','vertCanvas',
+['btnNewProject','btnAddVideo','sourceSelect','btnUndo','btnRedo',
+ 'exportMode','btnExport','status','srcVideo','srcEmpty','origPane','origTime','btnPlay','btnLoop','vertPane','vertCanvas',
  'panX','panY','zoom','bgBlur','verticalCropReset',
  'sourcePanX','sourcePanY','sourceZoom','sourceCropReset',
  'overlay','overlayMsg','overlayProg',
@@ -23,16 +22,13 @@ const el = {};
  'seekBar','seekMarks','seekRange','seekFill','seekHead','frameInfo',
  'workPane','shelf','shelfCount','outList','totalDur','btnPlayOut','btnStopOut'].forEach(id => el[id] = $(id));
 
-let projectOpen = false;
 let activeUrl = null;
 let pendingSeek = null;
 let lastSelKey = '';
 let loopEnabled = true;
 let sequence = null;
 let transportRaf = 0;
-let projectSaveTimer = 0;
 let sequenceAdvancing = false;
-let missingSources = [];
 let activeArea = 'timeline';
 
 function init() {
@@ -47,77 +43,77 @@ function init() {
   outSeq.init({ list: el.outList, total: el.totalDur }, { play: playOutputFrom });
   srcTimeline.onPlayRange(playRange);
 
-  wireMenu(); wireTransport(); wireCrop(); wireShortcuts(); wireSeek(); wireConfirm(); wireAreas(); wireWorkspaceSplitters();
+  wireMenu(); wireTransport(); wireCrop(); wireShortcuts(); wireSeek(); wireConfirm(); wireAreas(); wireWorkspaceSplitters(); wireVideoDrop();
   store.subscribe(onState);
 
   bootstrap();
 }
 
 async function bootstrap() {
-  try {
-    const re = await projectStore.reattach();
-    if (re) {
-      projectOpen = true;
-      if (re.project) store.load(re.project);
-      store.loadHistoryState(await projectStore.loadHistory());
-      setMissingSources(await fileOpen.relinkAll());
-      refreshStateViews();
-    }
-  } catch { /* ignore */ }
-  if (!projectOpen && await store.restore()) {
-    setMissingSources(await fileOpen.relinkAll());
-    refreshStateViews();
-  }
+  await clearLocalData();
+  resetTemporaryEdit('Temporary edit ready');
   updateChrome();
 }
 
 // ---------- menu ----------
 function wireMenu() {
-  el.btnNewProject.onclick = guard(async () => {
-    const name = await projectStore.newProject();
-    projectOpen = true; store.load({ name });
-    setMissingSources([]);
-    updateChrome();
-    setStatus('New project: ' + name);
-  });
-  el.btnOpenProject.onclick = guard(async () => {
-    const { name, project } = await projectStore.openProject();
-    projectOpen = true;
-    if (project) {
-      store.load(project);
-      store.loadHistoryState(await projectStore.loadHistory());
-      const missing = await fileOpen.relinkAll({ requestPermission: true });
-      setMissingSources(missing);
-      refreshStateViews();
-      setStatus(missing.length ? name + ' missing links: ' + missing.length : 'Opened: ' + name);
-    } else { store.load({ name }); setMissingSources([]); updateChrome(); setStatus('Opened empty folder as a new project: ' + name); }
-  });
+  el.btnNewProject.onclick = () => resetTemporaryEdit('State cleared');
   el.btnAddVideo.onclick = guard(async () => {
     el.btnAddVideo.disabled = true;
     try {
       await fileOpen.addVideo();
-      refreshMissingSources();
     }
     finally { updateChrome(); }
-  });
-  el.btnRelinkMissing.onclick = guard(async () => {
-    el.btnRelinkMissing.disabled = true;
-    let missing = await fileOpen.relinkAll({ requestPermission: true });
-    for (const source of missing) {
-      if (!confirm('Choose a video file for: ' + (source.fileName || source.id) + '?')) continue;
-      await fileOpen.relinkOne(source.id);
-    }
-    missing = refreshMissingSources();
-    setMissingSources(missing);
-    refreshStateViews();
-    setStatus(missing.length
-      ? 'Some videos could not be restored: ' + missing.length
-      : 'Video access restored');
   });
   el.btnUndo.onclick = () => store.undo();
   el.btnRedo.onclick = () => store.redo();
   el.btnExport.onclick = guard(doExport);
   el.sourceSelect.onchange = () => store.setUI({ activeSourceId: el.sourceSelect.value });
+}
+
+function resetTemporaryEdit(message) {
+  stopSequence();
+  try { el.srcVideo.pause(); } catch { /* ignore */ }
+  activeUrl = null;
+  pendingSeek = null;
+  lastSelKey = '';
+  fileOpen.clear();
+  store.load({ name: 'temporary' });
+  setStatus(message);
+}
+
+async function clearLocalData() {
+  if (!('indexedDB' in window)) return;
+  await new Promise((resolve) => {
+    const req = indexedDB.deleteDatabase('viralcut');
+    req.onsuccess = req.onerror = req.onblocked = () => resolve();
+  });
+}
+
+function wireVideoDrop() {
+  const takeFiles = guard(async (files) => {
+    const videos = [...files].filter(f => f.type.startsWith('video/') || /\.(mp4|mov|mkv|webm|m4v)$/i.test(f.name || ''));
+    if (!videos.length) {
+      setStatus('Drop video files on Add Video');
+      return;
+    }
+    await fileOpen.addVideoFiles(videos);
+    setStatus(videos.length === 1 ? 'Video added: ' + videos[0].name : 'Videos added: ' + videos.length);
+    updateChrome();
+  });
+
+  el.btnAddVideo.addEventListener('dragover', (e) => {
+    if (![...e.dataTransfer.types].includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    el.btnAddVideo.classList.add('drop-active');
+  });
+  el.btnAddVideo.addEventListener('dragleave', () => el.btnAddVideo.classList.remove('drop-active'));
+  el.btnAddVideo.addEventListener('drop', (e) => {
+    e.preventDefault();
+    el.btnAddVideo.classList.remove('drop-active');
+    takeFiles(e.dataTransfer.files);
+  });
 }
 
 // ---------- transport / ranged playback ----------
@@ -551,7 +547,7 @@ function wireShortcuts() {
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); store.undo(); }
     else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); store.redo(); }
-    else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveProjectNow(); }
+    else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); setStatus('This is a temporary edit; use Export to write a video'); }
     else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
     else if (e.key === ' ') {
       e.preventDefault();
@@ -613,15 +609,22 @@ async function doExport() {
   if (!settings) return;
   showOverlay('Preparing export...');
   try {
-    const blob = await exportProject({
-      onStatus: (m) => el.overlayMsg.textContent = m,
-      onProgress: (p) => el.overlayProg.value = Math.round((p || 0) * 100),
-      onLog: (m) => console.debug('[ffmpeg]', m),
-    });
-    const fileName = settings.fileName;
-    if (projectStore.dirHandle()) await projectStore.saveOutputBlob(blob, fileName);
-    else downloadBlob(blob, fileName);
-    setStatus('Export complete: ' + fileName);
+    const completed = [];
+    for (let i = 0; i < settings.targets.length; i++) {
+      const target = settings.targets[i];
+      el.overlayMsg.textContent = `Preparing ${target.label} export...`;
+      const blob = await exportProject({
+        width: target.width,
+        height: target.height,
+        fps: settings.fps,
+        cropMode: target.cropMode,
+        onStatus: (m) => el.overlayMsg.textContent = settings.targets.length > 1 ? `${target.label}: ${m}` : m,
+        onProgress: (p) => el.overlayProg.value = Math.round(((i + (p || 0)) / settings.targets.length) * 100),
+      });
+      downloadBlob(blob, target.fileName);
+      completed.push(target.fileName);
+    }
+    setStatus('Export complete: ' + completed.join(', '));
   } finally { hideOverlay(); }
 }
 
@@ -637,19 +640,18 @@ function prepareExportSettings() {
   const requested = prompt('Export file name', stripMp4(currentName));
   if (requested == null) return null;
   const baseName = sanitizeFileName(stripMp4(requested)) || 'viralcut';
-  const fileName = baseName + '.mp4';
-
   const sources = [...new Map(items.map(it => [it.source.id, it.source])).values()];
   const fps = resolveExportFps(sources, p.output.fps || 30);
   if (!fps) return null;
-  const size = resolveExportSize(sources, p.output);
+  const mode = el.exportMode.value || 'vertical';
+  const targets = exportTargets(mode, baseName, sources);
 
   store.update((project) => {
     project.exportName = baseName;
-    project.output = { ...project.output, width: size.width, height: size.height, fps };
+    project.output = { ...project.output, fps };
   }, { commit: false });
 
-  return { fileName, fps, ...size };
+  return { fps, targets };
 }
 
 function resolveExportFps(sources, fallback) {
@@ -674,8 +676,25 @@ function resolveExportFps(sources, fallback) {
   return fps;
 }
 
-function resolveExportSize(sources, output) {
-  const aspect = (output?.width || 1080) / (output?.height || 1920);
+function exportTargets(mode, baseName, sources) {
+  const vertical = {
+    label: 'Vertical 9:16',
+    cropMode: 'vertical',
+    fileName: (mode === 'both' ? `${baseName}-vertical` : baseName) + '.mp4',
+    ...resolveExportSize(sources, 9 / 16),
+  };
+  const horizontal = {
+    label: 'Horizontal 16:9',
+    cropMode: 'horizontal',
+    fileName: (mode === 'both' ? `${baseName}-horizontal` : baseName) + '.mp4',
+    ...resolveExportSize(sources, 16 / 9),
+  };
+  if (mode === 'horizontal') return [horizontal];
+  if (mode === 'both') return [vertical, horizontal];
+  return [vertical];
+}
+
+function resolveExportSize(sources, aspect) {
   const maxSourceLong = Math.max(0, ...sources.map(s => Math.max(Number(s.width) || 0, Number(s.height) || 0)));
   const longEdge = Math.min(1080, maxSourceLong || 1080);
   if (aspect >= 1) return { width: even(longEdge), height: even(longEdge / aspect) };
@@ -731,28 +750,7 @@ function onState(project, ui) {
   requestAnimationFrame(() => cropPreview.refresh());
 
   renderSeekDecor();
-  scheduleProjectSave();
   updateChrome();
-}
-
-function scheduleProjectSave() {
-  if (!projectOpen || !projectStore.dirHandle()) return;
-  clearTimeout(projectSaveTimer);
-  projectSaveTimer = setTimeout(saveProjectNow, 700);
-}
-
-async function saveProjectNow() {
-  if (!projectOpen || !projectStore.dirHandle()) return;
-  clearTimeout(projectSaveTimer);
-  projectSaveTimer = 0;
-  try {
-    const ts = await projectStore.save(store.get());
-    await projectStore.saveHistory(store.historyState());
-    setStatus('Autosaved ' + new Date(ts).toLocaleTimeString());
-  } catch (err) {
-    console.warn('auto save failed', err);
-    setStatus('Autosave error: ' + (err?.message || err));
-  }
 }
 
 function applySelection() {
@@ -773,15 +771,6 @@ function applySelection() {
   // focus the view to the clip only for shelf/output navigation, not timeline clicks
   // (timeline view should change via wheel/right-drag only)
   if (!fromTL && r.material) queueMicrotask(() => srcTimeline.focusMaterial(r.material));
-}
-
-function setMissingSources(sources) {
-  missingSources = sources || [];
-}
-
-function refreshMissingSources() {
-  missingSources = store.get().sources.filter(s => !fileOpen.isLinked(s.id));
-  return missingSources;
 }
 
 function refreshStateViews() {
@@ -805,17 +794,15 @@ function bindVideo(ui) {
       el.srcVideo.removeAttribute('src');
       try { el.srcVideo.load(); } catch { /* ignore */ }
     }
-    el.srcEmpty.textContent = ui.activeSourceId ? 'Relink video access' : 'Add a video to begin';
+    el.srcEmpty.textContent = ui.activeSourceId ? 'Video is no longer available' : 'Add a video to begin';
     el.srcEmpty.hidden = false;
   }
 }
 
 function updateChrome() {
   const p = store.get();
-  el.btnAddVideo.disabled = !projectOpen;
+  el.btnAddVideo.disabled = false;
   el.sourceSelect.disabled = !p.sources.length;
-  el.btnRelinkMissing.hidden = !missingSources.length;
-  el.btnRelinkMissing.disabled = !missingSources.length;
   el.btnExport.disabled = !p.outputs.length;
   el.btnPlayOut.disabled = !p.outputs.length;
   el.btnUndo.disabled = !store.canUndo();

@@ -46,6 +46,7 @@ body {
 }
 .btn:hover:not(:disabled) { background: var(--panel-3); border-color: #444b5c; }
 .btn:disabled { opacity: .4; cursor: default; }
+.btn.drop-active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(79,140,255,.28); }
 .btn-accent { background: var(--accent-2); border-color: var(--accent); }
 .btn-accent:hover:not(:disabled) { background: var(--accent); }
 .btn-sm { padding: 3px 9px; min-height: 26px; font-size: 12px; }
@@ -54,6 +55,7 @@ body {
   border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-height: 34px;
   max-width: 220px;
 }
+.export-mode { max-width: 150px; }
 
 /* ===== Row 1: Menu ===== */
 #menu {

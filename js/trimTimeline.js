@@ -1,6 +1,6 @@
 // trimTimeline.js - source strip: IN/OUT handles, playhead, zoom, click-to-seek
-import { store } from './store.js?v=20260630-relink-folder';
-import { generateStrip } from './thumbnails.js?v=20260630-relink-folder';
+import { store } from './store.js?v=20260707-mediabunny-single';
+import { generateStrip } from './thumbnails.js?v=20260707-mediabunny-single';
 
 let els, video;
 let duration = 0;
@@ -129,3 +129,4 @@ export function setOut() {
   store.setUI({ trimOut: Math.max(video.currentTime, (store.ui.trimIn || 0) + 0.1) });
   layout();
 }
+

@@ -1,197 +1,20 @@
-// fileOpen.js - manage source media: pick files, runtime URL registry, re-link
-import { store, uid } from './store.js?v=20260630-relink-folder';
-import * as db from './db.js?v=20260630-relink-folder';
-import * as projectStore from './projectStore.js?v=20260630-relink-folder';
-import { hashKey } from './util.js?v=20260630-relink-folder';
-import { readMediaInfo } from './mediaInfo.js?v=20260630-relink-folder';
+// fileOpen.js - temporary in-browser source media registry.
+import { store, uid } from './store.js?v=20260707-mediabunny-single';
+import { hashKey } from './util.js?v=20260707-mediabunny-single';
+import { readMediaInfo } from './mediaInfo.js?v=20260707-mediabunny-single';
 
-// runtime registry: sourceId -> { file, url, handle }
-const media = new Map();
+const media = new Map(); // sourceId -> { file, url, handle }
 let addVideoInFlight = null;
-const handleKeyOf = (sourceId) => projectStore.sourceHandleKey(sourceId);
-const VIDEO_EXTS = new Set(['.mp4', '.mov', '.mkv', '.webm', '.m4v']);
-const SKIP_SCAN_DIRS = new Set(['.viralcut']);
 
 export function urlFor(sourceId) { return media.get(sourceId)?.url || null; }
 export function fileFor(sourceId) { return media.get(sourceId)?.file || null; }
 export function isLinked(sourceId) { return media.has(sourceId); }
 
-function storedHandleKey(source) {
-  return source.handleKey || source.access?.handleKey || handleKeyOf(source.id);
-}
-
-async function readPermission(handle) {
-  if (!handle?.queryPermission) return 'prompt';
-  try {
-    return await handle.queryPermission({ mode: 'read' });
-  } catch {
-    return 'prompt';
+export function clear() {
+  for (const entry of media.values()) {
+    if (entry.url) URL.revokeObjectURL(entry.url);
   }
-}
-
-async function requestReadPermission(handle) {
-  if (!handle?.requestPermission) return 'prompt';
-  try {
-    return await handle.requestPermission({ mode: 'read' });
-  } catch {
-    return 'denied';
-  }
-}
-
-async function fileFromStoredHandle(source, { requestPermission = false } = {}) {
-  const handle = await db.loadHandle(storedHandleKey(source));
-  if (!handle) return null;
-
-  let permission = await readPermission(handle);
-  if (permission !== 'granted' && requestPermission) {
-    permission = await requestReadPermission(handle);
-  }
-  if (permission !== 'granted') return null;
-
-  try {
-    return { file: await handle.getFile(), handle };
-  } catch {
-    return null;
-  }
-}
-
-function extOf(name) {
-  const i = String(name || '').lastIndexOf('.');
-  return i >= 0 ? String(name).slice(i).toLowerCase() : '';
-}
-
-function isVideoFileName(name) {
-  return VIDEO_EXTS.has(extOf(name));
-}
-
-function fileMatchScore(source, file) {
-  const sameName = !!source.fileName && file.name === source.fileName;
-  const sourceSize = Number(source.size || 0);
-  const sameSize = sourceSize > 0 && file.size === sourceSize;
-  const sourceModified = Number(source.lastModified || 0);
-  const sameModified = sourceModified > 0 && Math.abs(file.lastModified - sourceModified) < 2000;
-
-  if (sameName && (!sourceSize || sameSize)) return 100;
-  if (sameSize && sameModified) return 90;
-  return 0;
-}
-
-async function fileFromProjectFolder(source) {
-  const dir = projectStore.dirHandle();
-  if (!dir) return null;
-
-  if (source.fileName) {
-    try {
-      const handle = await dir.getFileHandle(source.fileName);
-      const file = await handle.getFile();
-      if (fileMatchScore(source, file) >= 100) return { file, handle };
-    } catch { /* fall back to scanning */ }
-  }
-
-  const matches = [];
-  async function scan(folder, depth = 0) {
-    if (depth > 3 || !folder?.entries) return;
-    try {
-      for await (const [name, handle] of folder.entries()) {
-        if (handle.kind === 'directory') {
-          if (!SKIP_SCAN_DIRS.has(name)) await scan(handle, depth + 1);
-          continue;
-        }
-        if (handle.kind !== 'file' || !isVideoFileName(name)) continue;
-        try {
-          const file = await handle.getFile();
-          const score = fileMatchScore(source, file);
-          if (score) matches.push({ score, file, handle });
-        } catch { /* ignore unreadable candidate */ }
-      }
-    } catch { /* ignore folders that cannot be enumerated */ }
-  }
-
-  await scan(dir);
-  matches.sort((a, b) => b.score - a.score);
-  if (!matches.length) return null;
-  if (matches[1] && matches[1].score === matches[0].score) return null;
-  return { file: matches[0].file, handle: matches[0].handle };
-}
-
-// Get a FRESH File for reading (export). A File captured earlier can go stale
-// ("File could not be read! Code=-1") once the OS/handle invalidates it, so
-// re-acquire from the stored FileSystemFileHandle when possible (re-prompting
-// for permission if needed) and refresh the cached object URL too.
-export async function freshFileFor(sourceId) {
-  const entry = media.get(sourceId);
-  if (!entry) return null;
-  const h = entry.handle;
-  if (h && h.getFile) {
-    try {
-      if (h.queryPermission) {
-        let perm = await h.queryPermission({ mode: 'read' });
-        if (perm !== 'granted') perm = await h.requestPermission({ mode: 'read' });
-        if (perm !== 'granted') return entry.file;
-      }
-      const file = await h.getFile();
-      if (entry.url) URL.revokeObjectURL(entry.url);
-      const url = URL.createObjectURL(file);
-      media.set(sourceId, { ...entry, file, url });
-      return file;
-    } catch { /* fall back to cached file */ }
-  }
-  return entry.file;
-}
-
-async function probeDuration(url) {
-  return new Promise((resolve) => {
-    const v = document.createElement('video');
-    v.preload = 'metadata';
-    v.onloadedmetadata = () => resolve(v.duration || 0);
-    v.onerror = () => resolve(0);
-    v.src = url;
-  });
-}
-
-// Measure the real frame rate by sampling consecutive presented frames via
-// requestVideoFrameCallback (the only reliable in-browser source of true frame
-// timing). Returns a sensible fps, snapped to common rates; falls back to 30.
-async function probeFps(url) {
-  if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype)) return 30;
-  return new Promise((resolve) => {
-    const v = document.createElement('video');
-    v.preload = 'auto'; v.muted = true; v.playsInline = true;
-    const times = [];
-    let done = false;
-    const finish = (fps) => { if (done) return; done = true; try { v.pause(); } catch {} resolve(fps); };
-    const onFrame = (_now, meta) => {
-      times.push(meta.mediaTime);
-      if (times.length >= 10) return finish(estimate());
-      v.requestVideoFrameCallback(onFrame);
-    };
-    const estimate = () => {
-      const deltas = [];
-      for (let i = 1; i < times.length; i++) {
-        const d = times[i] - times[i - 1];
-        if (d > 1e-4) deltas.push(d);
-      }
-      if (!deltas.length) return 30;
-      deltas.sort((a, b) => a - b);
-      const med = deltas[Math.floor(deltas.length / 2)];
-      const raw = 1 / med;
-      // snap to the nearest common broadcast/web frame rate
-      const common = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 120];
-      let best = common[0], bestErr = Infinity;
-      for (const c of common) { const e = Math.abs(c - raw); if (e < bestErr) { bestErr = e; best = c; } }
-      return (bestErr / best < 0.05) ? best : Math.round(raw);
-    };
-    v.onerror = () => finish(30);
-    v.onloadeddata = () => { v.currentTime = 0; v.play().then(() => v.requestVideoFrameCallback(onFrame)).catch(() => finish(30)); };
-    setTimeout(() => finish(times.length > 1 ? estimate() : 30), 3000); // safety timeout
-    v.src = url;
-  });
-}
-
-async function nativeMediaInfo(url) {
-  const duration = await probeDuration(url);
-  const fps = await probeFps(url);
-  return { duration, fps, width: 0, height: 0, hasAudio: false, videoDecodable: false, audioDecodable: false };
+  media.clear();
 }
 
 function register(sourceId, file, handle = null) {
@@ -202,7 +25,24 @@ function register(sourceId, file, handle = null) {
   return url;
 }
 
-// User adds a new video to the project
+// Get a fresh File for export when the browser supplied a live file handle.
+// Drag-and-dropped files do not have a handle, so the in-memory File is used.
+export async function freshFileFor(sourceId) {
+  const entry = media.get(sourceId);
+  if (!entry) return null;
+  const h = entry.handle;
+  if (h?.getFile) {
+    try {
+      const file = await h.getFile();
+      register(sourceId, file, h);
+      return file;
+    } catch {
+      /* fall back to the File already selected for this temporary session */
+    }
+  }
+  return entry.file;
+}
+
 export async function addVideo() {
   if (addVideoInFlight) return addVideoInFlight;
   addVideoInFlight = addVideoImpl().finally(() => { addVideoInFlight = null; });
@@ -210,35 +50,49 @@ export async function addVideo() {
 }
 
 async function addVideoImpl() {
-  let file, handle = null;
   if ('showOpenFilePicker' in window) {
-    const [fh] = await window.showOpenFilePicker({
+    const handles = await window.showOpenFilePicker({
+      multiple: true,
       types: [{ description: 'Video', accept: { 'video/*': ['.mp4', '.mov', '.mkv', '.webm', '.m4v'] } }],
     });
-    handle = fh;
-    file = await fh.getFile();
-  } else {
-    file = await pickWithInput();
-    if (!file) return null;
+    const files = [];
+    for (const handle of handles) files.push({ file: await handle.getFile(), handle });
+    return addVideoEntries(files);
   }
 
-  const id = uid('src');
-  // stable source identity from file attributes (survives re-imports / sessions)
+  const files = await pickWithInput();
+  return addVideoFiles(files);
+}
+
+export async function addVideoFiles(files) {
+  const entries = [...files]
+    .filter(file => file?.type?.startsWith('video/') || /\.(mp4|mov|mkv|webm|m4v)$/i.test(file?.name || ''))
+    .map(file => ({ file, handle: null }));
+  return addVideoEntries(entries);
+}
+
+async function addVideoEntries(entries) {
+  const added = [];
+  for (const entry of entries) {
+    const id = await addOneVideo(entry.file, entry.handle);
+    if (id) added.push(id);
+  }
+  return added;
+}
+
+async function addOneVideo(file, handle = null) {
+  if (!file) return null;
+
   const mediaKey = await hashKey(`${file.name}:${file.size}:${file.lastModified || 0}`);
   const existing = store.get().sources.find(s =>
     s.mediaKey === mediaKey || (s.fileName === file.name && s.size === file.size));
   if (existing) {
     register(existing.id, file, handle);
-    const handleKey = handleKeyOf(existing.id);
-    if (handle) db.saveHandle(handleKey, handle).catch(() => {});
-    store.update((p) => {
-      const t = p.sources.find(s => s.id === existing.id);
-      if (t) t.handleKey = handleKey;
-    }, { commit: false });
     store.setUI({ activeSourceId: existing.id });
     return existing.id;
   }
 
+  const id = uid('src');
   const url = register(id, file, handle);
   let info;
   try {
@@ -247,7 +101,6 @@ async function addVideoImpl() {
     console.warn('Mediabunny metadata probe failed; falling back to native metadata.', err);
     info = await nativeMediaInfo(url);
   }
-  if (handle) db.saveHandle(handleKeyOf(id), handle).catch(() => {});
 
   store.update((p, ui) => {
     p.sources.push({
@@ -263,7 +116,6 @@ async function addVideoImpl() {
       hasAudio: info.hasAudio,
       videoDecodable: info.videoDecodable,
       audioDecodable: info.audioDecodable,
-      handleKey: handleKeyOf(id),
       subtitleFile: null,
     });
     ui.activeSourceId = id;
@@ -276,91 +128,75 @@ function pickWithInput() {
     const inp = document.createElement('input');
     inp.type = 'file';
     inp.accept = 'video/*';
-    inp.onchange = () => resolve(inp.files[0] || null);
+    inp.multiple = true;
+    inp.onchange = () => resolve(inp.files || []);
     inp.click();
   });
 }
 
-// After opening a project, try to re-link sources from their original file handles.
-export async function relinkAll({ requestPermission = false } = {}) {
-  const missing = [];
-  for (const s of store.get().sources) {
-    if (media.has(s.id)) continue;
-    const linked = await fileFromStoredHandle(s, { requestPermission }) || await fileFromProjectFolder(s);
-    if (linked) {
-      register(s.id, linked.file, linked.handle);
-      const handleKey = storedHandleKey(s);
-      if (linked.handle) db.saveHandle(handleKey, linked.handle).catch(() => {});
-      if (s.handleKey !== handleKey) {
-        store.update((p) => {
-          const t = p.sources.find(x => x.id === s.id);
-          if (t) t.handleKey = handleKey;
-        }, { commit: false });
-      }
-    } else {
-      missing.push(s);
-    }
-  }
-  // backfill missing metadata now that media is linked
-  for (const s of store.get().sources) {
-    if ((s.fps && s.duration && s.width != null && s.height != null && s.hasAudio != null) || !media.has(s.id)) continue;
-    let info;
-    try {
-      info = await readMediaInfo(media.get(s.id).file);
-    } catch {
-      info = await nativeMediaInfo(media.get(s.id).url);
-    }
-    store.update((p) => {
-      const t = p.sources.find(x => x.id === s.id);
-      if (t) Object.assign(t, {
-        duration: t.duration || info.duration,
-        fps: t.fps || info.fps,
-        width: t.width ?? info.width,
-        height: t.height ?? info.height,
-        hasAudio: t.hasAudio ?? info.hasAudio,
-        videoDecodable: t.videoDecodable ?? info.videoDecodable,
-        audioDecodable: t.audioDecodable ?? info.audioDecodable,
-        handleKey: t.handleKey || handleKeyOf(s.id),
-      });
-    }, { commit: false });
-  }
-  return missing; // sources still needing manual re-link
+async function nativeMediaInfo(url) {
+  const duration = await probeDuration(url);
+  const fps = await probeFps(url);
+  return { duration, fps, width: 0, height: 0, hasAudio: false, videoDecodable: false, audioDecodable: false };
 }
 
-// Manually re-link one source (user picks the file)
-export async function relinkOne(sourceId) {
-  let file, handle = null;
-  if ('showOpenFilePicker' in window) {
-    const [h] = await window.showOpenFilePicker({ types: [{ description: 'Video', accept: { 'video/*': [] } }] });
-    handle = h;
-    file = await h.getFile();
-  } else {
-    file = await pickWithInput();
-  }
-  if (file) {
-    register(sourceId, file, handle);
-    let info = null;
-    try { info = await readMediaInfo(file); } catch { /* metadata stays as-is */ }
-    if (handle) db.saveHandle(handleKeyOf(sourceId), handle).catch(() => {});
-    store.update((p) => {
-      const t = p.sources.find(x => x.id === sourceId);
-      if (!t) return;
-      Object.assign(t, {
-        fileName: file.name,
-        size: file.size,
-        lastModified: file.lastModified,
-        handleKey: handleKeyOf(sourceId),
-      });
-      if (info) Object.assign(t, {
-        duration: info.duration,
-        fps: info.fps,
-        width: info.width,
-        height: info.height,
-        hasAudio: info.hasAudio,
-        videoDecodable: info.videoDecodable,
-        audioDecodable: info.audioDecodable,
-      });
-    }, { commit: false });
-  }
-  return !!file;
+async function probeDuration(url) {
+  return new Promise((resolve) => {
+    const v = document.createElement('video');
+    v.preload = 'metadata';
+    v.onloadedmetadata = () => resolve(v.duration || 0);
+    v.onerror = () => resolve(0);
+    v.src = url;
+  });
 }
+
+async function probeFps(url) {
+  if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype)) return 30;
+  return new Promise((resolve) => {
+    const v = document.createElement('video');
+    v.preload = 'auto';
+    v.muted = true;
+    v.playsInline = true;
+    const times = [];
+    let done = false;
+    const finish = (fps) => {
+      if (done) return;
+      done = true;
+      try { v.pause(); } catch { /* ignore */ }
+      resolve(fps);
+    };
+    const estimate = () => {
+      const deltas = [];
+      for (let i = 1; i < times.length; i++) {
+        const d = times[i] - times[i - 1];
+        if (d > 1e-4) deltas.push(d);
+      }
+      if (!deltas.length) return 30;
+      deltas.sort((a, b) => a - b);
+      const raw = 1 / deltas[Math.floor(deltas.length / 2)];
+      const common = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 120];
+      let best = common[0], bestErr = Infinity;
+      for (const c of common) {
+        const e = Math.abs(c - raw);
+        if (e < bestErr) { bestErr = e; best = c; }
+      }
+      return (bestErr / best < 0.05) ? best : Math.round(raw);
+    };
+    const onFrame = (_now, meta) => {
+      times.push(meta.mediaTime);
+      if (times.length >= 10) return finish(estimate());
+      v.requestVideoFrameCallback(onFrame);
+    };
+    v.onerror = () => finish(30);
+    v.onloadeddata = () => {
+      v.currentTime = 0;
+      v.play().then(() => v.requestVideoFrameCallback(onFrame)).catch(() => finish(30));
+    };
+    setTimeout(() => finish(times.length > 1 ? estimate() : 30), 3000);
+    v.src = url;
+  });
+}
+
+export async function relinkAll() { return []; }
+export async function relinkOne() { return false; }
+

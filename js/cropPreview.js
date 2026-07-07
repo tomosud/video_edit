@@ -1,5 +1,5 @@
 // cropPreview.js - 9:16 canvas preview of the active source with crop/pan/zoom
-import { store } from './store.js?v=20260630-relink-folder';
+import { store } from './store.js?v=20260707-mediabunny-single';
 
 let canvas, ctx, video;
 let raf = 0;
@@ -135,3 +135,4 @@ function startLoop() { if (!raf) loop(); }
 function stopLoop() { cancelAnimationFrame(raf); raf = 0; draw(); }
 
 export function stop() { stopLoop(); }
+

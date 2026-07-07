@@ -13,18 +13,21 @@
     <header id="menu">
       <span class="brand">ViralCut</span>
       <button id="btnNewProject" class="btn">New</button>
-      <button id="btnOpenProject" class="btn">Open</button>
       <span class="sep"></span>
-      <button id="btnAddVideo" class="btn" disabled>Add Video</button>
+      <button id="btnAddVideo" class="btn" title="Click or drop video files here">Add Video</button>
       <select id="sourceSelect" class="sel" disabled></select>
-      <button id="btnRelinkMissing" class="btn" hidden disabled>Relink Videos</button>
       <span class="sep"></span>
       <button id="btnUndo" class="btn" disabled title="Ctrl+Z">Undo</button>
       <button id="btnRedo" class="btn" disabled title="Ctrl+Shift+Z">Redo</button>
       <span class="sep"></span>
+      <select id="exportMode" class="sel export-mode" title="Export layout">
+        <option value="vertical">Vertical 9:16</option>
+        <option value="horizontal">Horizontal 16:9</option>
+        <option value="both">Both</option>
+      </select>
       <button id="btnExport" class="btn btn-accent" disabled>Export</button>
       <span class="spacer"></span>
-      <span id="status" class="status">No project selected</span>
+      <span id="status" class="status">Temporary edit ready</span>
     </header>
 
     <section id="srcPane" class="pane area-pane" data-area="timeline">
@@ -140,6 +143,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260630-relink-folder"></script>
+  <script type="module" src="js/app.js?v=20260707-mediabunny-single"></script>
 </body>
 </html>

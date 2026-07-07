@@ -1,6 +1,6 @@
 // export.js - deterministic frame export via Mediabunny/WebCodecs.
-import { store } from './store.js?v=20260630-relink-folder';
-import { freshFileFor } from './fileOpen.js?v=20260630-relink-folder';
+import { store } from './store.js?v=20260707-mediabunny-single';
+import { freshFileFor } from './fileOpen.js?v=20260707-mediabunny-single';
 import {
   ALL_FORMATS,
   BlobSource,
@@ -14,7 +14,7 @@ import {
   Output,
   canEncodeAudio,
   canEncodeVideo,
-} from '../lib/mediabunny.min.js?v=20260630-relink-folder';
+} from './mediabunny.js?v=20260707-mediabunny-single';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const even = (v) => Math.max(2, Math.round(v / 2) * 2);
@@ -163,14 +163,21 @@ function outputItems(project) {
   }).filter(Boolean);
 }
 
-export async function exportProject({ onProgress, onStatus } = {}) {
+function cropForItem(item, cropMode) {
+  if (cropMode === 'horizontal') {
+    return { panX: 0.5, panY: 0.5, zoom: 1, bgBlur: 0, ...(item.material.sourceCrop || {}) };
+  }
+  return item.material.crop;
+}
+
+export async function exportProject({ width, height, fps: requestedFps, cropMode = 'vertical', onProgress, onStatus } = {}) {
   const project = store.get();
   const items = outputItems(project);
   if (!items.length) throw new Error('No output clips to export');
 
-  const outW = even(project.output.width || 608);
-  const outH = even(project.output.height || 1080);
-  const fps = project.output.fps || 30;
+  const outW = even(width || project.output.width || 608);
+  const outH = even(height || project.output.height || 1080);
+  const fps = requestedFps || project.output.fps || 30;
   const frameDur = 1 / fps;
   const bitrate = Math.max(2_500_000, Math.round(outW * outH * fps * 0.16));
   const codec = await chooseCodec(outW, outH, bitrate);
@@ -240,7 +247,7 @@ export async function exportProject({ onProgress, onStatus } = {}) {
           it.bounds.outFrame - 1,
         );
         const sourceCanvas = await getFrameCanvas(session, it.bounds.sourceFps, sourceFrame);
-        drawFrame(ctx, sourceCanvas, outW, outH, it.material.crop);
+        drawFrame(ctx, sourceCanvas, outW, outH, cropForItem(it, cropMode));
         await canvasSource.add(outFrame / fps, frameDur);
 
         outFrame++;

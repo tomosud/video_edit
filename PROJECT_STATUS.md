@@ -1,18 +1,31 @@
 # ViralCut Current Status
 
-Last updated: 2026-06-27
+Last updated: 2026-07-07
 
 This file is the single source of truth for the current implementation. Older planning and handoff Markdown files were removed because they described pre-Mediabunny or partially obsolete designs and had become hard to trust.
 
 ## What This App Is
 
-ViralCut is a local browser-based vertical video editor.
+ViralCut is a browser-only temporary video editing tool.
 
-- Input: local video files selected through the browser.
-- Main workflow: create source clips, arrange them as output clips, crop to 9:16, export MP4.
+- Input: local video files selected or dropped into the browser.
+- Main workflow: add videos, create source clips, arrange them as output clips, crop, export MP4.
 - Runtime target: Chrome / Edge on localhost or GitHub Pages-style static hosting.
 - Core code style: vanilla JavaScript ES modules, no bundler.
 - Current media stack: Mediabunny + WebCodecs for metadata, frame extraction, and deterministic export; HTMLVideoElement is still used for the interactive source preview and native playback.
+
+## Temporary Editing Model
+
+ViralCut no longer has a project-folder save/open workflow.
+
+- `New` clears all in-memory editing state and revokes selected video object URLs.
+- Startup always begins from a blank temporary edit.
+- The app does not autosave projects, file handles, history, or source links.
+- The old IndexedDB database name `viralcut` is deleted on startup when the browser allows it.
+- Export always uses browser download behavior; it does not write into a chosen project folder.
+- Refreshing or closing the tab discards the edit. Users must export the finished video they want to keep.
+- Video files can be added by clicking `Add Video` or by dropping video files on the `Add Video` button.
+- Export layout is selected from the header: vertical 9:16, horizontal 16:9, or both.
 
 ## Current Architecture
 
@@ -29,7 +42,7 @@ The central store is [js/store.js](js/store.js). Selection is a single `{ kind, 
 ### Main Modules
 
 - [js/app.js](js/app.js): app wiring, source preview transport, range playback, selection side effects, seek bar, export command.
-- [js/fileOpen.js](js/fileOpen.js): source file selection, relinking, object URL management, fallback probing.
+- [js/fileOpen.js](js/fileOpen.js): temporary source file selection/drop registration, object URL management, fallback probing.
 - [js/mediaInfo.js](js/mediaInfo.js): Mediabunny-based metadata probing.
 - [js/mediaSession.js](js/mediaSession.js): shared Mediabunny `Input` / `CanvasSink` sessions for exact frame reads.
 - [js/thumbnails.js](js/thumbnails.js): source timeline thumbnail generation.
@@ -37,7 +50,7 @@ The central store is [js/store.js](js/store.js). Selection is a single `{ kind, 
 - [js/frameStrip.js](js/frameStrip.js): per-frame strip around the current preview frame.
 - [js/cropPreview.js](js/cropPreview.js): 9:16 canvas crop preview.
 - [js/previewSequence.js](js/previewSequence.js): deterministic output-sequence preview via Mediabunny frame reads.
-- [js/export.js](js/export.js): deterministic frame export through Mediabunny `Output`, `CanvasSource`, and `AudioSampleSource`.
+- [js/export.js](js/export.js): deterministic vertical/horizontal frame export through Mediabunny `Output`, `CanvasSource`, and `AudioSampleSource`.
 - [js/util.js](js/util.js): shared helpers for formatting, hashing, scrubbing, and frame/time conversion.
 
 ## UI Design
@@ -112,52 +125,45 @@ Mediabunny behavior that matters:
 
 ## Work Done In The Latest Pass
 
-This section records the changes made in the current debugging round.
+This section records the changes made on 2026-07-07.
 
-### Frame/Time Utilities
+### Temporary Tool Conversion
 
-Added frame helpers in [js/util.js](js/util.js):
+Updated [index.html](index.html), [js/app.js](js/app.js), [js/fileOpen.js](js/fileOpen.js), and [js/projectStore.js](js/projectStore.js):
 
-- `frameFromTime(time, fps, maxFrame)`
-- `frameStartTime(frame, fps)`
-- `frameProbeTime(frame, fps, duration)`
-- `seekVideoFrame(video, frame, fps, duration)`
-- `makeFrameScrubber(video, fpsOf, durationOf)`
+- Removed the project-folder open/save workflow from the active UI.
+- `New` now clears the current in-memory edit instead of choosing a folder.
+- Startup resets to a blank temporary edit.
+- Old `viralcut` IndexedDB data is deleted on startup when possible.
+- File handles and project history are no longer saved.
+- Export always uses browser download behavior.
 
-Purpose: centralize frame/time conversion and stop scattering `video.currentTime = frame / fps` through the app.
+### Video Add Drop Target
 
-### Source Preview Seeking
+Updated [index.html](index.html), [css/style.css](css/style.css), [js/app.js](js/app.js), and [js/fileOpen.js](js/fileOpen.js):
 
-Updated [js/app.js](js/app.js), [js/sourceTimeline.js](js/sourceTimeline.js), and [js/frameStrip.js](js/frameStrip.js) so UI-initiated seeks use frame-center probe time instead of exact frame boundary time.
+- `Add Video` remains enabled from startup.
+- Clicking `Add Video` can select one or more videos.
+- Dropping video files on `Add Video` adds them to the current temporary edit.
+- Selected/dropped files live only in the current browser session.
 
-This fixed the observed mismatch where the frame strip showed a white/black frame but the source preview displayed the previous frame.
+### Export Layout Selection
 
-### Per-Frame Strip
+Updated [index.html](index.html), [js/app.js](js/app.js), and [js/export.js](js/export.js):
 
-Updated [js/frameStrip.js](js/frameStrip.js):
+- Added a header export layout selector: vertical 9:16, horizontal 16:9, or both.
+- Vertical export uses each material's vertical crop settings.
+- Horizontal export uses each material's source-preview crop settings.
+- `Both` writes separate `-vertical.mp4` and `-horizontal.mp4` downloads.
 
-- Current frame now uses `frameFromTime()` instead of `Math.round(video.currentTime * fps)`.
-- Click/wheel seeks go through `seekVideoFrame()`.
-- Valid frame range is now `0..totalFrames-1`.
-- Exclusive out range is capped at `totalFrames`, not `totalFrames + 1`.
+### Mediabunny Import Fix
 
-### Mediabunny Exact Frame Reads
+Follow-up fix after browser testing:
 
-Updated [js/mediaSession.js](js/mediaSession.js):
-
-- `getVideoFrameCanvas()` now queries `CanvasSink.getCanvas()` using `frameProbeTime(frame, fps, duration)`.
-
-Purpose: avoid querying exactly at `frame / fps`, which can return the previous sample when real media timestamps do not line up perfectly with nominal FPS boundaries.
-
-### Output Preview And Export Bounds
-
-Updated [js/previewSequence.js](js/previewSequence.js) and [js/export.js](js/export.js):
-
-- `inFrame` is clamped to the last valid visible frame.
-- `outFrame` is clamped to `totalFrames`.
-- `outFrame` remains exclusive.
-
-The export path was already visually correct in testing, but this removes the old `maxFrame + 1` allowance that could create an invalid extra frame at the end of a source.
+- A mixed cache-buster state loaded multiple `store.js` module instances, so timeline-created materials could appear in one module graph while the Materials shelf still read another empty store.
+- Mediabunny was also imported directly from multiple modules with cache-busted URLs, which triggered its `Mediabunny was loaded twice` warning and broke thumbnail/frame-read behavior.
+- Added [js/mediabunny.js](js/mediabunny.js) as the single Mediabunny import point.
+- All app module imports now use one cache-buster value, while `mediabunny.min.js` itself is imported once without a query string.
 
 ## Current Known Issue
 

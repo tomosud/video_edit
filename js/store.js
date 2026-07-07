@@ -1,4 +1,4 @@
-// store.js - central editing state + pub/sub + undo/redo + debounced autosave
+// store.js - central in-memory editing state + pub/sub + undo/redo
 const HISTORY_LIMIT = 100;
 const AUTOSAVE_DEBOUNCE = 500;
 
@@ -120,7 +120,7 @@ class Store {
     this._emit(); this._scheduleSave(); this._persistHistory();
   }
 
-  // ---- persistence hooks (projectStore writes these to the workspace folder) ----
+  // ---- no persistence: edits live only in this browser session ----
   _scheduleSave() {
     clearTimeout(this._saveTimer);
     this._saveTimer = setTimeout(() => {}, AUTOSAVE_DEBOUNCE);
