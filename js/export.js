@@ -1,6 +1,7 @@
 // export.js - deterministic frame export via Mediabunny/WebCodecs.
 import { store } from './store.js?v=20260707-horizontal-crop';
 import { freshFileFor } from './fileOpen.js?v=20260707-horizontal-crop';
+import { captionTextAt, drawCaption } from './captions.js?v=20260710-captions';
 import {
   ALL_FORMATS,
   BlobSource,
@@ -276,6 +277,7 @@ export async function exportProject({ width, height, fps: requestedFps, cropMode
         const crop = cropForItem(it, cropMode);
         if (cropMode === 'horizontal') drawHorizontalFrame(ctx, sourceCanvas, outW, outH, crop);
         else drawFrame(ctx, sourceCanvas, outW, outH, crop);
+        drawCaption(ctx, outW, outH, captionTextAt(it.output.caption, Math.round((outTime + localFrame / fps) * 1000)));
         await canvasSource.add(outFrame / fps, frameDur);
 
         outFrame++;

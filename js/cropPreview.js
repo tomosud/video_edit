@@ -1,5 +1,6 @@
 // cropPreview.js - 9:16 canvas preview of the active source with crop/pan/zoom
 import { store } from './store.js?v=20260707-horizontal-crop';
+import { captionTextAt, drawCaption } from './captions.js?v=20260710-captions';
 
 let canvas, ctx, video;
 let raf = 0;
@@ -57,6 +58,7 @@ function draw() {
   if (!video || video.readyState < 2 || !video.videoWidth) return;
 
   drawCropped(ctx, video, W, H, currentCrop());
+  drawActiveCaption(ctx, W, H);
 }
 
 export function drawFrame(sourceCanvas, crop = currentCrop()) {
@@ -64,6 +66,30 @@ export function drawFrame(sourceCanvas, crop = currentCrop()) {
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
   drawCropped(ctx, sourceCanvas, W, H, crop);
+  drawActiveCaption(ctx, W, H);
+}
+
+function drawActiveCaption(ctx, W, H) {
+  const text = activeCaptionText();
+  if (text) drawCaption(ctx, W, H, text);
+}
+
+function activeCaptionText() {
+  const sel = store.ui.selection;
+  if (sel.kind !== 'output') return '';
+  const p = store.get();
+  let sequenceMs = 0;
+  for (const output of p.outputs) {
+    const material = p.materials.find(m => m.id === output.materialId);
+    if (!material) continue;
+    const durationMs = Math.max(250, Math.round(Math.max(0, material.out - material.in) * 1000));
+    if (output.id === sel.id) {
+      const localMs = Math.round(Math.max(0, ((video?.currentTime || material.in) - material.in) * 1000));
+      return captionTextAt(output.caption, sequenceMs + localMs);
+    }
+    sequenceMs += durationMs;
+  }
+  return '';
 }
 
 function sourceSize(source) {

@@ -2,13 +2,13 @@
 import { store } from './store.js?v=20260707-horizontal-crop';
 import * as fileOpen from './fileOpen.js?v=20260707-horizontal-crop';
 import * as db from './db.js?v=20260707-horizontal-crop';
-import * as cropPreview from './cropPreview.js?v=20260707-horizontal-crop';
-import * as horizontalPreview from './horizontalPreview.js?v=20260707-horizontal-crop';
+import * as cropPreview from './cropPreview.js?v=20260710-caption-layout-fix';
+import * as horizontalPreview from './horizontalPreview.js?v=20260710-caption-layout-fix';
 import * as srcTimeline from './sourceTimeline.js?v=20260707-horizontal-crop';
 import * as frameStrip from './frameStrip.js?v=20260707-horizontal-crop';
 import * as shelf from './materialShelf.js?v=20260707-horizontal-crop';
-import * as outSeq from './outputSequence.js?v=20260707-horizontal-crop';
-import { exportProject, downloadBlob } from './export.js?v=20260707-horizontal-crop';
+import * as outSeq from './outputSequence.js?v=20260710-caption-layout-fix';
+import { exportProject, downloadBlob } from './export.js?v=20260710-caption-layout-fix';
 import { fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js?v=20260707-horizontal-crop';
 
 const $ = (id) => document.getElementById(id);
@@ -23,7 +23,7 @@ const el = {};
  'srcPane','tlScroll','tlInner','thumbRow','clipBands','tlPlayhead','frameStrip','srcRange',
  'tlOverview','ovThumbRow','ovClips','ovWindow','ovPlayhead',
  'seekBar','seekMarks','seekRange','seekFill','seekHead','frameInfo',
- 'workPane','shelf','shelfCount','outList','totalDur','btnPlayOut','btnStopOut'].forEach(id => el[id] = $(id));
+ 'workPane','shelf','shelfCount','outList','captionEditor','editZoom','totalDur','btnPlayOut','btnStopOut'].forEach(id => el[id] = $(id));
 
 let activeUrl = null;
 let pendingSeek = null;
@@ -44,7 +44,7 @@ function init() {
   }, el.srcVideo);
   frameStrip.init(el.frameStrip, el.srcVideo);
   shelf.init({ shelf: el.shelf, count: el.shelfCount }, { play: playRange });
-  outSeq.init({ list: el.outList, total: el.totalDur }, { play: playOutputFrom });
+  outSeq.init({ list: el.outList, captionEditor: el.captionEditor, zoom: el.editZoom, total: el.totalDur }, { play: playOutputFrom });
   srcTimeline.onPlayRange(playRange);
 
   wireMenu(); wireTransport(); wireCrop(); wireShortcuts(); wireSeek(); wireConfirm(); wireAreas(); wireWorkspaceSplitters(); wireVideoDrop();
