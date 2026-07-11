@@ -3,6 +3,7 @@
 export const MIN_CAPTION_MS = 250;
 const LINE_GAP_MS = 200;
 const MIN_LINE_VISIBLE_MS = 400;
+const EDGE_PAD_MS = 34;
 
 export function defaultCaption(startMs = 0, endMs = startMs + 1000) {
   return {
@@ -63,7 +64,8 @@ export function captionTextAt(caption, sequenceMs, field = 'text') {
   const abs = captionAbsolute(caption, 0);
   const raw = String(abs?.[field] || '');
   if (!abs || !raw) return '';
-  if (sequenceMs < abs.startMs || sequenceMs >= abs.endMs) return '';
+  if (sequenceMs < abs.startMs || sequenceMs > abs.endMs + EDGE_PAD_MS) return '';
+  const playMs = Math.max(abs.startMs, Math.min(sequenceMs, abs.endMs - 1));
   const lines = captionLines(raw);
   if (!lines.length) return '';
   if (lines.length === 1) return lines[0];
@@ -72,7 +74,7 @@ export function captionTextAt(caption, sequenceMs, field = 'text') {
   const canUseGaps = duration >= gapTotal + MIN_LINE_VISIBLE_MS * lines.length;
   if (canUseGaps) {
     const visibleMs = (duration - gapTotal) / lines.length;
-    let elapsed = sequenceMs - abs.startMs;
+    let elapsed = playMs - abs.startMs;
     for (let i = 0; i < lines.length; i++) {
       if (elapsed < visibleMs) return lines[i];
       elapsed -= visibleMs;
@@ -83,7 +85,7 @@ export function captionTextAt(caption, sequenceMs, field = 'text') {
     }
     return lines[lines.length - 1];
   }
-  const index = Math.min(lines.length - 1, Math.floor((sequenceMs - abs.startMs) / duration * lines.length));
+  const index = Math.min(lines.length - 1, Math.floor((playMs - abs.startMs) / duration * lines.length));
   return lines[index];
 }
 
@@ -101,7 +103,7 @@ export function activeCaptionText(project, sequenceMs) {
   }
   rows.sort((a, b) => a.startMs - b.startMs);
   for (const row of rows) {
-    if (sequenceMs < row.startMs || sequenceMs >= row.endMs) continue;
+    if (sequenceMs < row.startMs || sequenceMs > row.endMs + EDGE_PAD_MS) continue;
     if (!captionLines(row.text).length && !captionLines(row.secondaryText).length) continue;
     const primary = captionTextAt(row, sequenceMs, 'text');
     const secondary = captionTextAt(row, sequenceMs, 'secondaryText');

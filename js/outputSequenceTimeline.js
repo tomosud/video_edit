@@ -1,12 +1,15 @@
 // outputSequenceTimeline.js - edit timeline with playhead, wheel zoom/pan, and anchored captions
 import { store, uid } from './store.js?v=20260707-horizontal-crop';
-import { cardThumb, cloneCanvas } from './thumbnails.js?v=20260707-horizontal-crop';
+import { horizontalCardThumb, horizontalCropSignature, cloneCanvas } from './thumbnails.js?v=20260711-horizontal-thumb-crop';
 import { fmtDur } from './util.js?v=20260707-horizontal-crop';
-import { MIN_CAPTION_MS, captionAbsolute, captionDensity, captionLines, densityClass } from './captions.js?v=20260711-caption-edit-seek';
+import { MIN_CAPTION_MS, captionAbsolute, captionDensity, captionLines, densityClass } from './captions.js?v=20260711-edit-timeline-drag';
 
 const MIN_SPAN_SEC = 1;
 const MIN_CLIP_PX = 28;
 const OUTSIDE_CAPTION_PAD_MS = 500;
+const PREVIEW_INSET_MS = 120;
+const DROP_EDGE_PAN_PX = 54;
+const EDGE_THUMB_MIN_WIDTH = 180;
 
 let listEl, totalEl, captionEditorEl, video;
 let onPlay = () => {};
@@ -18,7 +21,9 @@ let gesture = null;
 let playRaf = 0;
 let draggingOutputId = null;
 let lastCaptionPress = null;
+let lastEmptyCaptionPress = null;
 let editingCaptionId = null;
+let dropMarkerEl = null;
 
 const thumbs = new Map();
 const thumbSig = new Map();
@@ -38,7 +43,10 @@ export function init(elements, hooks = {}) {
   listEl.addEventListener('contextmenu', (e) => e.preventDefault());
   listEl.addEventListener('dragover', onDragOver);
   listEl.addEventListener('dragleave', (e) => {
-    if (e.target === listEl) listEl.classList.remove('drop-active');
+    if (!listEl.contains(e.relatedTarget)) {
+      listEl.classList.remove('drop-active');
+      hideDropMarker();
+    }
   });
   listEl.addEventListener('drop', onDrop);
   window.addEventListener('pointermove', onPointerMove);
@@ -90,7 +98,11 @@ function render() {
   for (const item of layout.items) {
     if (item.endMs >= viewStartMs() && item.startMs <= viewEndMs()) {
       cutTrack.appendChild(card(item));
-      ensureThumb(item.output);
+      ensureThumb(item.output, 'mid');
+      if (showEdgeThumbs(item)) {
+        ensureThumb(item.output, 'start');
+        ensureThumb(item.output, 'end');
+      }
     }
   }
   for (const item of layout.items) {
@@ -199,9 +211,10 @@ function normalizeView(layout) {
 function card(item) {
   const selectedCaption = store.ui.selectedCaptionId ? findCaption(store.get(), store.ui.selectedCaptionId) : null;
   const selected = !store.ui.selectedCaptionId && store.ui.selection.kind === 'output' && store.ui.selection.id === item.output.id;
+  const materialRelated = !store.ui.selectedCaptionId && store.ui.selection.kind === 'material' && store.ui.selection.id === item.material.id;
   const captionRelated = selectedCaption?.output.id === item.output.id;
   const el = document.createElement('div');
-  el.className = 'card out-card' + (selected ? ' selected cut-selected' : '') + (captionRelated ? ' caption-related' : '');
+  el.className = 'card out-card' + (selected ? ' selected cut-selected' : '') + (captionRelated ? ' caption-related' : '') + (materialRelated ? ' material-related' : '') + (showEdgeThumbs(item) ? ' zoom-thumbs' : '');
   el.draggable = true;
   el.dataset.id = item.output.id;
   el.style.left = timeToX(item.startMs) + 'px';
@@ -209,8 +222,21 @@ function card(item) {
   el.title = displayName(item.material, item.source);
 
   const thumb = document.createElement('div');
-  thumb.className = 'thumb';
-  if (thumbs.has(item.output.id)) thumb.appendChild(cloneCanvas(thumbs.get(item.output.id)));
+  thumb.className = 'thumb' + (showEdgeThumbs(item) ? ' thumb-multi' : '');
+  if (showEdgeThumbs(item)) {
+    for (const kind of ['start', 'mid', 'end']) {
+      const part = document.createElement('div');
+      part.className = `thumb-part thumb-${kind}`;
+      part.dataset.thumbKind = kind;
+      const canvas = thumbs.get(thumbKey(item.output.id, kind));
+      if (canvas) part.appendChild(cloneCanvas(canvas));
+      thumb.appendChild(part);
+    }
+  } else {
+    thumb.dataset.thumbKind = 'mid';
+    const canvas = thumbs.get(thumbKey(item.output.id, 'mid'));
+    if (canvas) thumb.appendChild(cloneCanvas(canvas));
+  }
   const meta = document.createElement('div');
   meta.className = 'meta';
   meta.innerHTML = `<span class="dur">${fmtDur(item.durationMs / 1000)}</span><span class="src">${escapeHtml(displayName(item.material, item.source))}</span>`;
@@ -219,6 +245,10 @@ function card(item) {
   el.ondblclick = () => onPlay(item.output.id);
   wireOutputDrag(el);
   return el;
+}
+
+function showEdgeThumbs(item) {
+  return timeToX(item.endMs) - timeToX(item.startMs) >= EDGE_THUMB_MIN_WIDTH;
 }
 
 function captionBar(item, caption, layout) {
@@ -296,7 +326,8 @@ function onTimelinePointerDown(e) {
   const captionTrack = e.target.closest('.edit-caption-track');
   if (captionTrack && !e.target.closest('.caption-bar')) {
     e.preventDefault();
-    clearCaptionSelection();
+    if (isEmptyCaptionDoublePress(e)) createCaptionAt(e.clientX);
+    else clearCaptionSelection();
     return;
   }
   if (playhead || seekLane) {
@@ -310,7 +341,6 @@ function onTimelinePointerDown(e) {
 function onTimelineDblClick(e) {
   const bar = e.target.closest('.caption-bar');
   if (bar) beginCaptionTextEdit(bar.dataset.id);
-  else if (e.target.closest('.edit-caption-track')) createCaptionAt(e.clientX);
   else return;
   e.preventDefault();
   e.stopPropagation();
@@ -475,8 +505,8 @@ function wireCaptionPointer(bar, captionId) {
       startOffsetMs: found.caption.startOffsetMs,
       endOffsetMs: found.caption.endOffsetMs,
     };
-    if (edge) seekTimelineMs(edge === 'start' ? abs.startMs : abs.endMs, true);
-    else seekTimelineMs(abs.startMs, true);
+    if (edge) seekTimelineMs(edge === 'start' ? previewInsideMs(abs.startMs, abs, 'start') : previewInsideMs(abs.endMs, abs, 'end'), true);
+    else seekTimelineMs(previewInsideMs(abs.startMs, abs, 'start'), true);
   });
   bar.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -489,6 +519,14 @@ function isCaptionDoublePress(captionId, e) {
   const prev = lastCaptionPress;
   lastCaptionPress = { id: captionId, t: now, x: e.clientX, y: e.clientY };
   if (!prev || prev.id !== captionId || now - prev.t > 450) return false;
+  return Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < 10;
+}
+
+function isEmptyCaptionDoublePress(e) {
+  const now = performance.now();
+  const prev = lastEmptyCaptionPress;
+  lastEmptyCaptionPress = { t: now, x: e.clientX, y: e.clientY };
+  if (!prev || now - prev.t > 450) return false;
   return Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < 10;
 }
 
@@ -511,11 +549,18 @@ function onPointerMove(e) {
     const deltaMs = xToMs(e.clientX) - xToMs(gesture.startClientX);
     const targetAnchorMs = clampMs(gesture.startAnchorMs + deltaMs, layout);
     store.updateLive((p, ui) => moveCaptionAbsolute(p, ui, gesture.captionId, targetAnchorMs, gesture.startOffsetMs, gesture.endOffsetMs));
-    seekTimelineMs(targetAnchorMs + gesture.startOffsetMs, true);
+    seekTimelineMs(previewInsideMs(targetAnchorMs + gesture.startOffsetMs, {
+      startMs: targetAnchorMs + gesture.startOffsetMs,
+      endMs: targetAnchorMs + gesture.endOffsetMs,
+    }, 'start'), true);
   } else if (gesture.type === 'caption-resize') {
     const targetMs = clampViewMs(xToMs(e.clientX), layout);
     store.updateLive((p) => resizeCaptionAbsolute(p, gesture.captionId, gesture.edge, targetMs));
-    seekTimelineMs(gesture.edge === 'start' ? Math.min(targetMs, gesture.startAnchorMs - 1) : Math.max(targetMs, gesture.startAnchorMs + MIN_CAPTION_MS), true);
+    const edgeMs = gesture.edge === 'start' ? Math.min(targetMs, gesture.startAnchorMs - 1) : Math.max(targetMs, gesture.startAnchorMs + MIN_CAPTION_MS);
+    seekTimelineMs(previewInsideMs(edgeMs, {
+      startMs: gesture.edge === 'start' ? edgeMs : gesture.startAnchorMs + gesture.startOffsetMs,
+      endMs: gesture.edge === 'end' ? edgeMs : gesture.startAnchorMs + gesture.endOffsetMs,
+    }, gesture.edge), true);
   }
 }
 
@@ -566,15 +611,26 @@ function captionLineStartMs(caption, field, lineIndex, item) {
   const abs = captionAbsolute(caption, item.startMs, item.material);
   if (!abs) return item.startMs;
   const lines = captionLines(caption[field] || '');
-  if (lines.length <= 1) return abs.startMs;
+  if (lines.length <= 1) return previewInsideMs(abs.startMs, abs, 'start');
   const index = Math.max(0, Math.min(lines.length - 1, lineIndex));
   const duration = Math.max(MIN_CAPTION_MS, abs.endMs - abs.startMs);
   const gapTotal = 200 * (lines.length - 1);
   if (duration >= gapTotal + 400 * lines.length) {
     const visibleMs = (duration - gapTotal) / lines.length;
-    return Math.round(abs.startMs + index * (visibleMs + 200));
+    const lineStart = Math.round(abs.startMs + index * (visibleMs + 200));
+    return previewInsideMs(lineStart, { startMs: lineStart, endMs: lineStart + visibleMs }, 'start');
   }
-  return Math.round(abs.startMs + index * (duration / lines.length));
+  const segment = duration / lines.length;
+  const lineStart = Math.round(abs.startMs + index * segment);
+  return previewInsideMs(lineStart, { startMs: lineStart, endMs: lineStart + segment }, 'start');
+}
+
+function previewInsideMs(ms, abs, edge = 'start') {
+  const start = Math.round(abs.startMs);
+  const end = Math.round(abs.endMs);
+  if (end - start <= PREVIEW_INSET_MS * 2) return Math.round((start + end) / 2);
+  if (edge === 'end') return Math.max(start + 1, end - PREVIEW_INSET_MS);
+  return Math.min(end - 1, Math.max(start, Math.round(ms)) + PREVIEW_INSET_MS);
 }
 
 function startPlayheadLoop() { if (!playRaf) playheadLoop(); }
@@ -643,10 +699,10 @@ function captionGapAt(layout, anchorMs) {
   let gapStart = 0;
   for (const range of ranges) {
     if (anchorMs >= range.startMs && anchorMs < range.endMs) return null;
-    if (anchorMs < range.startMs) return { startMs: gapStart, endMs: Math.min(range.startMs, layout.totalMs) };
+    if (anchorMs < range.startMs) return { startMs: gapStart, endMs: range.startMs };
     gapStart = Math.max(gapStart, range.endMs);
   }
-  return { startMs: gapStart, endMs: layout.totalMs };
+  return { startMs: gapStart, endMs: layout.maxMs };
 }
 
 function itemAtMs(layout, ms) {
@@ -703,7 +759,61 @@ function onDragOver(e) {
   if (e.dataTransfer.types.includes('application/x-material') || draggingOutputId) {
     e.preventDefault();
     listEl.classList.add('drop-active');
+    const layout = sequenceLayout();
+    if (autoPanForDrop(e.clientX, layout)) return;
+    showDropMarker(dropIndexAt(e.clientX, layout), layout);
   }
+}
+
+function dropIndexAt(clientX, layout = sequenceLayout()) {
+  const targetMs = xToMs(clientX);
+  for (const item of layout.items) {
+    const midMs = (item.startMs + item.endMs) / 2;
+    if (targetMs < midMs) return item.index;
+  }
+  const last = layout.items[layout.items.length - 1];
+  return last ? last.index + 1 : 0;
+}
+
+function markerXForDropIndex(index, layout = sequenceLayout()) {
+  const next = layout.items.find(item => item.index >= index);
+  if (next) return timeToX(next.startMs);
+  const prev = [...layout.items].reverse().find(item => item.index < index);
+  return timeToX(prev ? prev.endMs : 0);
+}
+
+function showDropMarker(index, layout = sequenceLayout()) {
+  const timeline = listEl.querySelector('.edit-timeline');
+  if (!timeline || !layout.items.length) return;
+  if (!dropMarkerEl) {
+    dropMarkerEl = document.createElement('div');
+    dropMarkerEl.className = 'edit-insert-marker';
+  }
+  dropMarkerEl.style.left = `${markerXForDropIndex(index, layout)}px`;
+  if (!dropMarkerEl.parentNode) timeline.appendChild(dropMarkerEl);
+}
+
+function hideDropMarker() {
+  dropMarkerEl?.remove();
+  dropMarkerEl = null;
+}
+
+function autoPanForDrop(clientX, layout = sequenceLayout()) {
+  const timeline = listEl.querySelector('.edit-timeline');
+  if (!timeline || !layout.items.length) return false;
+  const rect = timeline.getBoundingClientRect();
+  const dir = clientX < rect.left + DROP_EDGE_PAN_PX ? -1 : (clientX > rect.right - DROP_EDGE_PAN_PX ? 1 : 0);
+  if (!dir) return false;
+  const min = layout.minMs / 1000;
+  const max = Math.max(min + MIN_SPAN_SEC, layout.maxMs / 1000);
+  const span = spanSec();
+  const shift = Math.max(0.08, span * 0.08) * dir;
+  const nextStart = Math.max(min, Math.min(max - span, viewStart + shift));
+  if (Math.abs(nextStart - viewStart) < 0.001) return false;
+  viewStart = nextStart;
+  viewEnd = viewStart + span;
+  render();
+  return true;
 }
 
 function wireOutputDrag(el) {
@@ -717,21 +827,16 @@ function wireOutputDrag(el) {
     draggingOutputId = null;
     el.classList.remove('dragging');
     listEl.classList.remove('drop-active');
+    hideDropMarker();
   });
 }
 
 function onDrop(e) {
   e.preventDefault();
   listEl.classList.remove('drop-active');
+  hideDropMarker();
   const matId = e.dataTransfer.getData('application/x-material');
-  const targetId = e.target.closest('.out-card')?.dataset.id;
-  const dropIndex = () => {
-    if (!targetId) return store.get().outputs.length;
-    const idx = store.get().outputs.findIndex(o => o.id === targetId);
-    if (idx < 0) return store.get().outputs.length;
-    const rect = e.target.closest('.out-card').getBoundingClientRect();
-    return e.clientX > rect.left + rect.width / 2 ? idx + 1 : idx;
-  };
+  const dropIndex = () => Math.max(0, Math.min(dropIndexAt(e.clientX), store.get().outputs.length));
 
   if (matId) {
     const id = uid('out');
@@ -747,10 +852,12 @@ function onDrop(e) {
       ui.selection = { kind: 'output', id };
       ui.selectedCaptionId = null;
     });
+    requestAnimationFrame(() => includeOutputInView(id));
   } else if (draggingOutputId) {
+    const movedId = draggingOutputId;
     store.update((p) => {
       const offsets = captionOffsets(p);
-      const from = p.outputs.findIndex(o => o.id === draggingOutputId);
+      const from = p.outputs.findIndex(o => o.id === movedId);
       let to = dropIndex();
       if (from < 0) return;
       const [moved] = p.outputs.splice(from, 1);
@@ -758,32 +865,73 @@ function onDrop(e) {
       p.outputs.splice(Math.max(0, Math.min(to, p.outputs.length)), 0, moved);
       restoreCaptionOffsets(p, offsets);
     });
+    requestAnimationFrame(() => includeOutputInView(movedId));
   }
 }
 
-async function ensureThumb(o) {
+function includeOutputInView(outputId) {
+  const layout = sequenceLayout();
+  normalizeView(layout);
+  const item = layout.items.find(it => it.output.id === outputId);
+  if (!item) return;
+  const padSec = 0.25;
+  const min = layout.minMs / 1000;
+  const max = Math.max(min + MIN_SPAN_SEC, layout.maxMs / 1000);
+  const boundsSpan = Math.max(MIN_SPAN_SEC, max - min);
+  const span = Math.min(boundsSpan, Math.max(MIN_SPAN_SEC, spanSec()));
+  let nextStart = viewStart;
+  const itemStart = item.startMs / 1000;
+  const itemEnd = item.endMs / 1000;
+  if (itemStart < viewStart + padSec) nextStart = itemStart - padSec;
+  if (itemEnd > viewEnd - padSec) nextStart = itemEnd - span + padSec;
+  nextStart = Math.max(min, Math.min(max - span, nextStart));
+  if (Math.abs(nextStart - viewStart) > 0.001) {
+    viewStart = nextStart;
+    viewEnd = viewStart + span;
+    render();
+  }
+}
+
+function thumbKey(outputId, kind) {
+  return `${outputId}:${kind || 'mid'}`;
+}
+
+function thumbTimeFor(material, source, kind) {
+  const fps = source?.fps || 30;
+  const frame = 1 / fps;
+  if (kind === 'start') return material.in;
+  if (kind === 'end') return Math.max(material.in, material.out - frame);
+  return (material.in + material.out) / 2;
+}
+
+async function ensureThumb(o, kind = 'mid') {
   const m = store.getMaterial(o.materialId);
   const src = m && store.getSource(m.sourceId);
   if (!src) return;
-  const sig = Math.round((m.in + m.out) / 2 * (src.fps || 30));
-  if (thumbSig.get(o.id) === sig || thumbBusy.get(o.id)) return;
-  thumbBusy.set(o.id, true);
+  const key = thumbKey(o.id, kind);
+  const time = thumbTimeFor(m, src, kind);
+  const sig = `${Math.round(time * (src.fps || 30))}:${horizontalCropSignature(m.horizontalCrop || {})}`;
+  if (thumbSig.get(key) === sig || thumbBusy.get(key)) return;
+  thumbBusy.set(key, true);
   let ok = false;
   try {
-    const canvas = await cardThumb(src, (m.in + m.out) / 2);
+    const canvas = await horizontalCardThumb(src, time, m.horizontalCrop || {});
     if (canvas) {
       ok = true;
-      thumbs.set(o.id, canvas);
-      thumbSig.set(o.id, sig);
-      const slot = listEl.querySelector(`.card[data-id="${o.id}"] .thumb`);
+      thumbs.set(key, canvas);
+      thumbSig.set(key, sig);
+      const slot = listEl.querySelector(`.card[data-id="${o.id}"] [data-thumb-kind="${kind}"]`);
       if (slot) slot.replaceChildren(cloneCanvas(canvas));
     }
   } catch { /* media can be unlinked */ }
   finally {
-    thumbBusy.set(o.id, false);
+    thumbBusy.set(key, false);
     if (ok) {
       const cm = store.getMaterial(o.materialId);
-      if (cm && Math.round((cm.in + cm.out) / 2 * (src.fps || 30)) !== thumbSig.get(o.id)) ensureThumb(o);
+      if (cm) {
+        const nextSig = `${Math.round(thumbTimeFor(cm, src, kind) * (src.fps || 30))}:${horizontalCropSignature(cm.horizontalCrop || {})}`;
+        if (nextSig !== thumbSig.get(key)) ensureThumb(o, kind);
+      }
     }
   }
 }
@@ -795,9 +943,12 @@ export function deleteOutput(id) {
     if (ui.selection.kind === 'output' && ui.selection.id === id) ui.selection = { kind: null, id: null };
     if (removed && captionsOf(removed).some(c => c.id === ui.selectedCaptionId)) ui.selectedCaptionId = null;
   });
-  thumbs.delete(id);
-  thumbSig.delete(id);
-  thumbBusy.delete(id);
+  for (const kind of ['start', 'mid', 'end']) {
+    const key = thumbKey(id, kind);
+    thumbs.delete(key);
+    thumbSig.delete(key);
+    thumbBusy.delete(key);
+  }
 }
 
 export function deleteCaption(id) {

@@ -1,6 +1,6 @@
 // horizontalPreview.js - 16:9 canvas preview with crop/pan/zoom/blur.
 import { store } from './store.js?v=20260707-horizontal-crop';
-import { activeCaptionText as captionTextForSequence, drawCaption } from './captions.js?v=20260711-caption-edit-preview';
+import { activeCaptionText as captionTextForSequence, captionAbsolute, captionTextAt, drawCaption } from './captions.js?v=20260711-caption-input-preview-inset';
 
 let canvas, ctx, video;
 let raf = 0;
@@ -109,7 +109,8 @@ function currentCaptionText() {
     const durationMs = Math.max(250, Math.round(Math.max(0, material.out - material.in) * 1000));
     if (output.id === selected) {
       const localMs = Math.round(Math.max(0, ((video?.currentTime || material.in) - material.in) * 1000));
-      return captionTextForSequence(p, sequenceMs + localMs);
+      const atMs = sequenceMs + localMs;
+      return selectedCaptionTextAt(p, atMs) || captionTextForSequence(p, atMs);
     }
     sequenceMs += durationMs;
   }
@@ -125,6 +126,26 @@ function selectedOutputForCaption() {
 function resolveSelectedCaption() {
   const outputId = selectedOutputForCaption();
   return outputId ? store.resolve({ kind: 'output', id: outputId }) : null;
+}
+
+function selectedCaptionTextAt(project, sequenceMs) {
+  const id = store.ui.selectedCaptionId;
+  if (!id) return '';
+  let startMs = 0;
+  for (const output of project.outputs) {
+    const material = project.materials.find(m => m.id === output.materialId);
+    if (!material) continue;
+    const durationMs = Math.max(250, Math.round(Math.max(0, material.out - material.in) * 1000));
+    const caption = (output.captions || []).find(c => c.id === id);
+    if (caption) {
+      const abs = captionAbsolute(caption, startMs, material);
+      const primary = captionTextAt(abs, sequenceMs, 'text');
+      const secondary = captionTextAt(abs, sequenceMs, 'secondaryText');
+      return primary || secondary ? { primary, secondary } : '';
+    }
+    startMs += durationMs;
+  }
+  return '';
 }
 
 function loop() {

@@ -2,19 +2,19 @@
 import { store } from './store.js?v=20260707-horizontal-crop';
 import * as fileOpen from './fileOpen.js?v=20260707-horizontal-crop';
 import * as db from './db.js?v=20260707-horizontal-crop';
-import * as cropPreview from './cropPreview.js?v=20260711-caption-edit-preview';
-import * as horizontalPreview from './horizontalPreview.js?v=20260711-caption-edit-preview';
+import * as cropPreview from './cropPreview.js?v=20260711-caption-input-preview-inset';
+import * as horizontalPreview from './horizontalPreview.js?v=20260711-caption-input-preview-inset';
 import * as srcTimeline from './sourceTimeline.js?v=20260707-horizontal-crop';
 import * as frameStrip from './frameStrip.js?v=20260707-horizontal-crop';
-import * as shelf from './materialShelf.js?v=20260707-horizontal-crop';
-import * as outSeq from './outputSequenceTimeline.js?v=20260711-caption-edit-seek';
-import { exportProject, downloadBlob } from './export.js?v=20260711-bilingual-captions';
+import * as shelf from './materialShelf.js?v=20260711-material-shelf-groups';
+import * as outSeq from './outputSequenceTimeline.js?v=20260711-material-shelf-groups';
+import { exportProject, downloadBlob } from './export.js?v=20260711-caption-boundary-add';
 import { fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js?v=20260707-horizontal-crop';
 
 const $ = (id) => document.getElementById(id);
 const el = {};
 ['btnNewProject','btnAddVideo','sourceSelect','btnUndo','btnRedo',
- 'btnExport','status','srcVideo','srcEmpty','origPane','origTime','btnPlay','btnLoop','vertPane','vertCanvas','horizCanvas',
+ 'btnExport','status','playInfo','srcVideo','srcEmpty','origPane','origTime','btnPlay','btnLoop','vertPane','vertCanvas','horizCanvas',
  'panX','panY','zoom','bgBlur','verticalCropReset',
  'sourcePanX','sourcePanY','sourceZoom','sourceBgBlur','sourceCropReset',
  'overlay','overlayMsg','overlayProg',
@@ -62,6 +62,7 @@ async function bootstrap() {
     await resetTemporaryEdit('Temporary edit ready', { clearSaved: true });
   }
   updateChrome();
+  updatePlayInfo();
 }
 
 // ---------- menu ----------
@@ -150,8 +151,12 @@ function wireTransport() {
   el.srcVideo.addEventListener('ended', stopTransportMonitor);
   el.srcVideo.addEventListener('play', updateOutputTransport);
   el.srcVideo.addEventListener('pause', updateOutputTransport);
+  el.srcVideo.addEventListener('play', updatePlayInfo);
+  el.srcVideo.addEventListener('pause', updatePlayInfo);
+  el.srcVideo.addEventListener('ended', updatePlayInfo);
   el.srcVideo.addEventListener('timeupdate', () => {
     el.origTime.textContent = fmtTime(el.srcVideo.currentTime) + ' / ' + fmtTime(el.srcVideo.duration);
+    updatePlayInfo();
   });
   el.btnLoop.style.color = 'var(--accent)';
 
@@ -163,6 +168,7 @@ function playRange(a, b) {
   stopSequence();
   store.ui.playRange = { start: a, end: b };
   renderSeekDecor();
+  updatePlayInfo();
   seekTo(a, () => el.srcVideo.play());
 }
 
@@ -274,6 +280,7 @@ function playOutputsFromIndex(startIndex) {
   sequence = { items, i: Math.min(Math.max(0, startIndex || 0), items.length - 1), mode: 'native' };
   sequenceAdvancing = false;
   updateOutputTransport();
+  updatePlayInfo();
   playSequenceItem();
 }
 
@@ -298,6 +305,7 @@ function seekOutputTime(sequenceSeconds, { previewOnly = false } = {}) {
   sequenceAdvancing = true;
   store.ui.playRange = null;
   updateOutputTransport();
+  updatePlayInfo();
   const it = items[index];
   store.ui._fromSequence = true;
   if (!(previewOnly && store.ui.selectedCaptionId)) store.select('output', it.outputId);
@@ -308,6 +316,7 @@ function seekOutputTime(sequenceSeconds, { previewOnly = false } = {}) {
       else {
         try { el.srcVideo.pause(); } catch { /* ignore */ }
         updateOutputTransport();
+        updatePlayInfo();
       }
     });
   });
@@ -318,6 +327,7 @@ function playSequenceItem() {
   const it = sequence.items[sequence.i];
   store.ui._fromSequence = true;
   store.select('output', it.outputId);
+  updatePlayInfo();
   ensureSource(it.sourceId, () => {
     seekTo(it.in, () => {
       sequenceAdvancing = false;
@@ -340,6 +350,7 @@ function toggleOutputPause() {
   if (el.srcVideo.paused) el.srcVideo.play();
   else el.srcVideo.pause();
   updateOutputTransport();
+  updatePlayInfo();
 }
 
 function stopSequence() {
@@ -350,11 +361,46 @@ function stopSequence() {
   sequence = null;
   sequenceAdvancing = false;
   updateOutputTransport();
+  updatePlayInfo();
 }
 
 function updateOutputTransport() {
   el.btnStopOut.disabled = !sequence;
   el.btnStopOut.textContent = sequence && el.srcVideo.paused ? 'Resume' : 'Pause';
+}
+
+function sequenceClock() {
+  if (!sequence?.items?.length) return { at: 0, total: 0 };
+  let before = 0;
+  for (let i = 0; i < sequence.i; i++) before += Math.max(0, sequence.items[i].duration || 0);
+  const item = sequence.items[sequence.i];
+  const local = item ? Math.max(0, Math.min(item.duration || 0, (el.srcVideo.currentTime || item.in) - item.in)) : 0;
+  const total = sequence.items.reduce((sum, it) => sum + Math.max(0, it.duration || 0), 0);
+  return { at: before + local, total };
+}
+
+function updatePlayInfo() {
+  if (!el.playInfo) return;
+  if (sequence) {
+    const clock = sequenceClock();
+    el.playInfo.dataset.mode = 'edit';
+    el.playInfo.textContent = `${el.srcVideo.paused ? 'Edit paused' : 'Edit playing'} ${fmtTime(clock.at)} / ${fmtTime(clock.total)}`;
+    return;
+  }
+  const r = store.ui.playRange;
+  if (r) {
+    const at = Math.max(0, Math.min(Math.max(0, r.end - r.start), (el.srcVideo.currentTime || r.start) - r.start));
+    el.playInfo.dataset.mode = 'cut';
+    el.playInfo.textContent = `${el.srcVideo.paused ? 'Cut paused' : 'Cut range'} ${fmtTime(at)} / ${fmtTime(Math.max(0, r.end - r.start))}`;
+    return;
+  }
+  if (!el.srcVideo.paused && el.srcVideo.currentTime > 0) {
+    el.playInfo.dataset.mode = activeArea === 'edit' ? 'edit' : 'source';
+    el.playInfo.textContent = `${activeArea === 'edit' ? 'Edit preview' : 'Source playing'} ${fmtTime(el.srcVideo.currentTime)}`;
+    return;
+  }
+  el.playInfo.dataset.mode = activeArea === 'edit' ? 'edit' : 'idle';
+  el.playInfo.textContent = activeArea === 'edit' ? 'Edit ready' : 'Source ready';
 }
 
 function ensureSource(sourceId, cb) {
@@ -544,6 +590,7 @@ function wireAreas() {
     if (Object.keys(patch).length) store.setUI(patch);
     for (const node of areas) node.classList.toggle('area-active', node.dataset.area === area);
     document.body.dataset.activeArea = area;
+    updatePlayInfo();
   };
   for (const node of areas) {
     node.addEventListener('pointerdown', () => setArea(node.dataset.area), { capture: true });

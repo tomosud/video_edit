@@ -1,6 +1,6 @@
 // materialShelf.js - cutout material cards: select, double-click play, drag to output
 import { store } from './store.js?v=20260707-horizontal-crop';
-import { cardThumb, cloneCanvas } from './thumbnails.js?v=20260707-horizontal-crop';
+import { horizontalCardThumb, horizontalCropSignature, cloneCanvas } from './thumbnails.js?v=20260711-horizontal-thumb-crop';
 import { fmtDur } from './util.js?v=20260707-horizontal-crop';
 
 let shelfEl, countEl;
@@ -36,14 +36,43 @@ function render() {
     return;
   }
   const sel = selMatId();
+  const usedIds = new Set(store.get().outputs.map(o => o.materialId));
+  const used = mats.filter(m => usedIds.has(m.id));
+  const unused = mats.filter(m => !usedIds.has(m.id));
   shelfEl.innerHTML = '';
-  for (const m of mats) {
-    shelfEl.appendChild(card(m, m.id === sel));
-    ensureThumb(m);
-  }
+  appendSection('Used in edit', used, sel);
+  appendSection('Unused', unused, sel);
 }
 
-function midSig(src, m) { return Math.round((m.in + m.out) / 2 * (src.fps || 30)); }
+function appendSection(title, mats, sel) {
+  const section = document.createElement('section');
+  section.className = 'shelf-section';
+  const head = document.createElement('div');
+  head.className = 'shelf-section-head';
+  head.innerHTML = `<span>${escapeHtml(title)}</span><span>${mats.length}</span>`;
+  const grid = document.createElement('div');
+  grid.className = 'shelf-grid';
+  if (!mats.length) {
+    const empty = document.createElement('div');
+    empty.className = 'shelf-empty';
+    empty.textContent = 'No materials';
+    grid.appendChild(empty);
+  } else {
+    for (const m of mats) {
+      grid.appendChild(card(m, m.id === sel));
+      ensureThumb(m);
+    }
+  }
+  section.append(head, grid);
+  shelfEl.appendChild(section);
+}
+
+function midSig(src, m) {
+  return [
+    Math.round((m.in + m.out) / 2 * (src.fps || 30)),
+    horizontalCropSignature(m.horizontalCrop || {}),
+  ].join(':');
+}
 function displayName(m, src) { return (m.title || '').trim() || src?.fileName || 'Untitled material'; }
 function infoTitle(m, src) {
   return [
@@ -63,7 +92,7 @@ async function ensureThumb(m) {
   thumbBusy.set(m.id, true);
   let ok = false;
   try {
-    const canvas = await cardThumb(src, (m.in + m.out) / 2);
+    const canvas = await horizontalCardThumb(src, (m.in + m.out) / 2, m.horizontalCrop || {});
     if (canvas) {
       ok = true;
       thumbs.set(m.id, canvas);
