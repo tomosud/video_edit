@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ViralCut - Vertical Video Editor</title>
   <script src="lib/coi-serviceworker.js"></script>
-  <link rel="stylesheet" href="css/style.css?v=20260710-caption-layout-fix">
+  <link rel="stylesheet" href="css/style.css?v=20260711-caption-ui-hitareas">
 </head>
 <body>
   <div id="app">
@@ -113,8 +113,7 @@
         <span>3 Edit</span>
         <button id="btnPlayOut" class="btn btn-sm" disabled title="Play from start">Play From Start</button>
         <button id="btnStopOut" class="btn btn-sm" disabled title="Pause or resume">Pause</button>
-        <label class="edit-zoom-label">Zoom <input id="editZoom" type="range" min="28" max="180" step="4" value="72"></label>
-        <span class="hint">Drag materials here / double-click a clip to play from that point / drag to reorder</span>
+        <span class="hint">Wheel to zoom / right-drag to pan / drag playhead / double-click empty caption lane to add / double-click caption to type</span>
         <span class="spacer"></span>
         <span id="totalDur" class="time">Total 0:00</span>
       </div>
@@ -166,6 +165,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260710-caption-layout-fix"></script>
+  <script type="module" src="js/app.js?v=20260711-caption-ui-hitareas"></script>
 </body>
 </html>

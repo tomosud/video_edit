@@ -10,6 +10,33 @@ export function defaultCaption(startMs = 0, endMs = startMs + 1000) {
   };
 }
 
+export function captionAbsolute(caption, clipStartMs = 0, material = null) {
+  if (!caption) return null;
+  if (Number.isFinite(+caption.startMs) && Number.isFinite(+caption.endMs)) {
+    return normalizeCaption(caption, caption.startMs, caption.endMs);
+  }
+  const materialInMs = Math.round(Math.max(0, +(material?.in || 0)) * 1000);
+  const materialOutMs = Number.isFinite(+material?.out)
+    ? Math.round(Math.max(0, +material.out) * 1000)
+    : null;
+  if (Number.isFinite(+caption.sourceAnchorMs) || Number.isFinite(+caption.anchorOffsetMs)) {
+    let localAnchorMs = Number.isFinite(+caption.sourceAnchorMs)
+      ? Math.round(+caption.sourceAnchorMs - materialInMs)
+      : Math.round(+caption.anchorOffsetMs || 0);
+    if (materialOutMs != null) localAnchorMs = Math.max(0, Math.min(Math.max(0, materialOutMs - materialInMs), localAnchorMs));
+    const anchorMs = Math.round(clipStartMs + localAnchorMs);
+    const startOffsetMs = Number.isFinite(+caption.startOffsetMs) ? Math.round(+caption.startOffsetMs) : -500;
+    const endOffsetMs = Number.isFinite(+caption.endOffsetMs) ? Math.round(+caption.endOffsetMs) : 1500;
+    return {
+      ...caption,
+      anchorMs,
+      startMs: anchorMs + startOffsetMs,
+      endMs: Math.max(anchorMs + startOffsetMs + MIN_CAPTION_MS, anchorMs + endOffsetMs),
+    };
+  }
+  return normalizeCaption(caption, caption.startMs, caption.endMs);
+}
+
 export function normalizeCaption(caption, startMs = 0, endMs = startMs + 1000) {
   if (!caption) return null;
   const fallback = defaultCaption(startMs, endMs);
@@ -30,20 +57,43 @@ export function captionLines(text) {
 }
 
 export function captionTextAt(caption, sequenceMs) {
-  if (!caption || !caption.text) return '';
-  if (sequenceMs < caption.startMs || sequenceMs >= caption.endMs) return '';
+  const abs = captionAbsolute(caption, 0);
+  if (!abs || !abs.text) return '';
+  if (sequenceMs < abs.startMs || sequenceMs >= abs.endMs) return '';
   const lines = captionLines(caption.text);
   if (!lines.length) return '';
   if (lines.length === 1) return lines[0];
-  const duration = Math.max(MIN_CAPTION_MS, caption.endMs - caption.startMs);
-  const index = Math.min(lines.length - 1, Math.floor((sequenceMs - caption.startMs) / duration * lines.length));
+  const duration = Math.max(MIN_CAPTION_MS, abs.endMs - abs.startMs);
+  const index = Math.min(lines.length - 1, Math.floor((sequenceMs - abs.startMs) / duration * lines.length));
   return lines[index];
+}
+
+export function activeCaptionText(project, sequenceMs) {
+  const rows = [];
+  let startMs = 0;
+  for (const output of (project?.outputs || [])) {
+    const material = (project.materials || []).find(m => m.id === output.materialId);
+    if (!material) continue;
+    const durationMs = Math.max(MIN_CAPTION_MS, Math.round(Math.max(0, material.out - material.in) * 1000));
+    for (const caption of (Array.isArray(output.captions) ? output.captions : [])) {
+      rows.push(captionAbsolute(caption, startMs, material));
+    }
+    startMs += durationMs;
+  }
+  rows.sort((a, b) => a.startMs - b.startMs);
+  for (const row of rows) {
+    if (sequenceMs < row.startMs || sequenceMs >= row.endMs) continue;
+    const text = captionTextAt(row, sequenceMs);
+    if (text) return text;
+  }
+  return '';
 }
 
 export function captionDensity(caption) {
   if (!caption?.text) return 0;
+  const abs = captionAbsolute(caption, 0);
   const chars = String(caption.text).replace(/\s/g, '').length;
-  const seconds = Math.max(0.001, (caption.endMs - caption.startMs) / 1000);
+  const seconds = Math.max(0.001, ((abs?.endMs || 0) - (abs?.startMs || 0)) / 1000);
   return chars / seconds;
 }
 

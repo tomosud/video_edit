@@ -1,6 +1,5 @@
 // store.js - central editing state + pub/sub + undo/redo + IndexedDB autosave
 import * as db from './db.js?v=20260707-horizontal-crop';
-import { normalizeCaption } from './captions.js?v=20260710-captions';
 
 const HISTORY_LIMIT = 100;
 const AUTOSAVE_DEBOUNCE = 500;
@@ -12,7 +11,7 @@ function emptyProject() {
     output: { width: 1080, height: 1920, fps: 30 },
     sources: [],     // {id, fileName, mediaKey, size, lastModified, duration, fps, width, height, hasAudio}
     materials: [],   // {id, sourceId, in, out, title?, horizontalCrop?, crop?} - cutout clips (shelf)
-    outputs: [],     // {id, materialId, caption?} - sequence
+    outputs: [],     // {id, materialId, captions:[]} - sequence
     bgm: null,
     savedAt: 0,
   };
@@ -22,6 +21,7 @@ function emptyUI() {
   return {
     activeSourceId: null,
     selection: { kind: null, id: null },   // kind: 'material' | 'output'
+    selectedCaptionId: null,
     view: { start: 0, end: 0 },            // source-timeline visible window (sec)
     crop: { panX: 0.5, panY: 0.5, zoom: 1, bgBlur: 1 }, // draft vertical crop
     playRange: null,                        // {start,end} active loop range
@@ -101,6 +101,7 @@ class Store {
 
   select(kind, id) {
     this.ui.selection = { kind, id };
+    this.ui.selectedCaptionId = null;
     this._emit();
   }
 
@@ -220,13 +221,10 @@ function normalizeProject(p) {
     m.horizontalCrop = { ...defaultHorizontalCrop(), ...(m.horizontalCrop || m.sourceCrop || {}) };
     delete m.sourceCrop;
   }
-  let cursorMs = 0;
   for (const o of outputs) {
-    const m = (p.materials || []).find(x => x.id === o.materialId);
-    const durMs = Math.max(250, Math.round(Math.max(0, (m?.out || 0) - (m?.in || 0)) * 1000));
     delete o.crop;
-    if (o.caption) o.caption = normalizeCaption(o.caption, cursorMs, cursorMs + durMs);
-    cursorMs += durMs;
+    delete o.caption;
+    o.captions = Array.isArray(o.captions) ? o.captions : [];
   }
   return p;
 }

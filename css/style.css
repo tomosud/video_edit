@@ -12,6 +12,7 @@
   --in:        #36d17a;
   --out:       #ff5d5d;
   --sel:       #ffb648;
+  --caption-sel: #36d17a;
   --radius:    8px;
 }
 
@@ -123,16 +124,6 @@ body {
 .time { font-variant-numeric: tabular-nums; }
 .placeholder { color: var(--text-dim); font-size: 13px; }
 .placeholder.abs { position: absolute; }
-.edit-zoom-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-dim);
-  font-size: 12px;
-  flex: 0 0 auto;
-}
-.edit-zoom-label input { width: 92px; }
-
 /* ===== Row 2: Source timeline ===== */
 #srcPane { position: relative; }
 #srcPane > .pane-head {
@@ -429,31 +420,49 @@ body {
 
 /* ===== Row 4: Output sequence ===== */
 .out-list {
-  flex: 0 0 118px;
+  flex: 0 0 208px;
   min-height: 0;
   padding: 8px 12px;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
   background: #171a21;
+  cursor: grab;
+  touch-action: none;
 }
+.out-list.panning { cursor: grabbing; }
+.out-list.seeking { cursor: ew-resize; }
 .out-list.drop-active { outline: 2px dashed var(--accent); outline-offset: -4px; }
 .out-list .placeholder { display: flex; align-items: center; height: 100%; }
 .edit-timeline {
   position: relative;
   min-width: 100%;
-  height: 94px;
+  height: 184px;
+  overflow: hidden;
 }
 .edit-cut-track {
   position: absolute;
-  inset: 0 0 30px 0;
+  inset: 0 0 126px 0;
 }
 .out-list .card.out-card {
   position: absolute;
   top: 0;
   bottom: 0;
   min-width: 0;
-  cursor: grab;
+  cursor: move;
   border-radius: 5px;
+  z-index: 2;
+}
+.out-list .card.out-card.cut-selected {
+  border-color: var(--sel);
+  box-shadow: 0 0 0 2px rgba(255,182,72,.18);
+}
+.out-list .card.out-card.caption-related {
+  border-style: dashed;
+  border-color: var(--caption-sel);
+  box-shadow: 0 0 0 1px rgba(54,209,122,.15);
+}
+.out-list .card.out-card.caption-related .meta .dur {
+  color: var(--caption-sel);
 }
 .out-list .card.out-card .meta {
   min-height: 27px;
@@ -464,43 +473,126 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  height: 28px;
+  height: 122px;
   border-top: 1px solid rgba(255,255,255,.08);
+  z-index: 5;
+}
+.edit-seek-lane {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50px;
+  bottom: 0;
+  z-index: 4;
+  cursor: ew-resize;
+}
+.edit-seek-lane::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 6px;
+  height: 3px;
+  background: rgba(255,255,255,.72);
+  box-shadow: 0 0 3px rgba(0,0,0,.85);
 }
 .caption-bar {
+  --caption-border: rgba(103, 190, 255, .95);
   position: absolute;
-  top: 4px;
-  height: 20px;
+  top: 28px;
+  height: 42px;
   min-width: 8px;
-  border: 1px solid rgba(103, 190, 255, .95);
+  border: 1px solid var(--caption-border);
   border-radius: 4px;
   background: rgba(79,140,255,.34);
   color: #f5f9ff;
   font-size: 11px;
-  line-height: 18px;
-  overflow: hidden;
-  white-space: nowrap;
-  cursor: pointer;
+  line-height: 14px;
+  overflow: visible;
+  white-space: pre-wrap;
+  cursor: move;
   box-shadow: 0 0 0 1px rgba(0,0,0,.55);
+  z-index: 6;
+}
+.caption-edit-textarea {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  resize: none;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(13,18,28,.96);
+  color: #fff;
+  font: 11px/1.25 -apple-system, "Segoe UI", system-ui, sans-serif;
+  padding: 3px 14px;
+  outline: none;
+  overflow: auto;
 }
 .caption-bar.warn {
-  border-color: #ffca58;
+  --caption-border: #ffca58;
+  border-color: var(--caption-border);
   background: rgba(255,202,88,.32);
 }
 .caption-bar.danger {
-  border-color: #ff6b6b;
+  --caption-border: #ff6b6b;
+  border-color: var(--caption-border);
   background: rgba(255,93,93,.36);
 }
 .caption-bar.selected {
-  border-color: var(--sel);
-  box-shadow: 0 0 0 2px rgba(255,182,72,.25);
+  --caption-border: var(--caption-sel);
+  border-color: var(--caption-border);
+  background: rgba(54,209,122,.32);
+  box-shadow: 0 0 0 2px rgba(54,209,122,.24);
+}
+.caption-bar.cut-related {
+  border-style: dashed;
+  --caption-border: var(--sel);
+  border-color: var(--caption-border);
+  box-shadow: 0 0 0 1px rgba(255,182,72,.15);
+}
+.caption-bar.caption-selected .caption-anchor-dot {
+  box-shadow: 0 0 0 2px rgba(54,209,122,.28);
+}
+.caption-bar.cut-related .caption-anchor-dot {
+  box-shadow: 0 0 0 2px rgba(255,182,72,.28);
 }
 .caption-label {
+  position: absolute;
+  inset: 0;
   display: block;
   overflow: hidden;
-  text-overflow: ellipsis;
-  padding: 0 14px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  padding: 6px 16px;
+  pointer-events: auto;
+}
+.caption-anchor-stem {
+  position: absolute;
+  left: var(--anchor-x, 50%);
+  top: -31px;
+  width: 7px;
+  height: 33px;
+  transform: translateX(-3px);
+  background: var(--caption-border);
+  border-radius: 4px;
+  box-shadow: 0 0 4px rgba(0,0,0,.75);
   pointer-events: none;
+  z-index: 3;
+}
+.caption-anchor-dot {
+  position: absolute;
+  left: var(--anchor-x, 50%);
+  top: -45px;
+  width: 22px;
+  height: 22px;
+  transform: translateX(-11px);
+  border-radius: 50%;
+  background: var(--caption-border);
+  border: 2px solid rgba(0,0,0,.65);
+  box-shadow: 0 0 0 3px rgba(0,0,0,.35), 0 0 8px rgba(0,0,0,.75);
+  pointer-events: none;
+  z-index: 4;
 }
 .caption-handle {
   position: absolute;
@@ -515,23 +607,15 @@ body {
 .caption-handle::after {
   content: "";
   position: absolute;
-  top: 4px;
-  bottom: 4px;
+  top: 7px;
+  bottom: 7px;
   left: 4px;
   width: 2px;
   background: rgba(255,255,255,.78);
   border-radius: 1px;
 }
 .caption-editor {
-  flex: 1 1 0;
-  min-height: 78px;
-  display: flex;
-  gap: 8px;
-  padding: 6px 12px 8px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  border-top: 1px solid var(--line);
-  background: #161920;
+  display: none;
 }
 .caption-row {
   flex: 0 0 250px;
@@ -574,6 +658,37 @@ body {
   box-shadow: 0 0 0 2px rgba(255,182,72,.14);
 }
 .out-list .placeholder { align-self: center; }
+.edit-playhead {
+  position: absolute;
+  top: 50px;
+  bottom: 0;
+  width: 30px;
+  transform: translateX(-15px);
+  z-index: 9;
+  cursor: ew-resize;
+  pointer-events: auto;
+}
+.edit-playhead::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 14px;
+  width: 3px;
+  background: #fff;
+  box-shadow: 0 0 4px rgba(0,0,0,.85);
+}
+.edit-playhead span {
+  position: absolute;
+  top: -4px;
+  left: 5px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid rgba(0,0,0,.55);
+  box-shadow: 0 0 6px rgba(0,0,0,.9);
+}
 
 /* ===== Overlay ===== */
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: flex; align-items: center; justify-content: center; z-index: 100; }

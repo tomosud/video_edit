@@ -2,13 +2,13 @@
 import { store } from './store.js?v=20260707-horizontal-crop';
 import * as fileOpen from './fileOpen.js?v=20260707-horizontal-crop';
 import * as db from './db.js?v=20260707-horizontal-crop';
-import * as cropPreview from './cropPreview.js?v=20260710-caption-layout-fix';
-import * as horizontalPreview from './horizontalPreview.js?v=20260710-caption-layout-fix';
+import * as cropPreview from './cropPreview.js?v=20260711-source-anchor';
+import * as horizontalPreview from './horizontalPreview.js?v=20260711-source-anchor';
 import * as srcTimeline from './sourceTimeline.js?v=20260707-horizontal-crop';
 import * as frameStrip from './frameStrip.js?v=20260707-horizontal-crop';
 import * as shelf from './materialShelf.js?v=20260707-horizontal-crop';
-import * as outSeq from './outputSequence.js?v=20260710-caption-layout-fix';
-import { exportProject, downloadBlob } from './export.js?v=20260710-caption-layout-fix';
+import * as outSeq from './outputSequenceTimeline.js?v=20260711-caption-ui-hitareas';
+import { exportProject, downloadBlob } from './export.js?v=20260711-source-anchor';
 import { fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js?v=20260707-horizontal-crop';
 
 const $ = (id) => document.getElementById(id);
@@ -23,7 +23,7 @@ const el = {};
  'srcPane','tlScroll','tlInner','thumbRow','clipBands','tlPlayhead','frameStrip','srcRange',
  'tlOverview','ovThumbRow','ovClips','ovWindow','ovPlayhead',
  'seekBar','seekMarks','seekRange','seekFill','seekHead','frameInfo',
- 'workPane','shelf','shelfCount','outList','captionEditor','editZoom','totalDur','btnPlayOut','btnStopOut'].forEach(id => el[id] = $(id));
+ 'workPane','shelf','shelfCount','outList','captionEditor','totalDur','btnPlayOut','btnStopOut'].forEach(id => el[id] = $(id));
 
 let activeUrl = null;
 let pendingSeek = null;
@@ -44,7 +44,7 @@ function init() {
   }, el.srcVideo);
   frameStrip.init(el.frameStrip, el.srcVideo);
   shelf.init({ shelf: el.shelf, count: el.shelfCount }, { play: playRange });
-  outSeq.init({ list: el.outList, captionEditor: el.captionEditor, zoom: el.editZoom, total: el.totalDur }, { play: playOutputFrom });
+  outSeq.init({ list: el.outList, captionEditor: el.captionEditor, total: el.totalDur, video: el.srcVideo }, { play: playOutputFrom, seek: seekOutputTime });
   srcTimeline.onPlayRange(playRange);
 
   wireMenu(); wireTransport(); wireCrop(); wireShortcuts(); wireSeek(); wireConfirm(); wireAreas(); wireWorkspaceSplitters(); wireVideoDrop();
@@ -252,9 +252,9 @@ function playOutputFrom(outputId) {
   playOutputsFromIndex(Math.max(0, index));
 }
 
-function playOutputsFromIndex(startIndex) {
+function outputPlaybackItems() {
   const p = store.get();
-  const items = p.outputs.map(o => {
+  return p.outputs.map(o => {
     const m = store.getMaterial(o.materialId);
     return m ? {
       outputId: o.id,
@@ -262,14 +262,55 @@ function playOutputsFromIndex(startIndex) {
       sourceId: m.sourceId,
       in: m.in,
       out: m.out,
+      duration: Math.max(0, m.out - m.in),
     } : null;
   }).filter(Boolean);
+}
+
+function playOutputsFromIndex(startIndex) {
+  const items = outputPlaybackItems();
   if (!items.length) return;
   store.ui.playRange = null;
   sequence = { items, i: Math.min(Math.max(0, startIndex || 0), items.length - 1), mode: 'native' };
   sequenceAdvancing = false;
   updateOutputTransport();
   playSequenceItem();
+}
+
+function seekOutputTime(sequenceSeconds, { previewOnly = false } = {}) {
+  const items = outputPlaybackItems();
+  if (!items.length) return;
+  const target = Math.max(0, sequenceSeconds || 0);
+  let cursor = 0;
+  let index = items.length - 1;
+  let local = 0;
+  for (let i = 0; i < items.length; i++) {
+    const d = Math.max(0, items[i].duration);
+    if (target < cursor + d || i === items.length - 1) {
+      index = i;
+      local = Math.max(0, Math.min(d, target - cursor));
+      break;
+    }
+    cursor += d;
+  }
+  const wasPlaying = !!sequence && !el.srcVideo.paused;
+  sequence = { items, i: index, mode: 'native' };
+  sequenceAdvancing = true;
+  store.ui.playRange = null;
+  updateOutputTransport();
+  const it = items[index];
+  store.ui._fromSequence = true;
+  store.select('output', it.outputId);
+  ensureSource(it.sourceId, () => {
+    seekTo(it.in + local, () => {
+      sequenceAdvancing = false;
+      if (wasPlaying && !previewOnly) el.srcVideo.play();
+      else {
+        try { el.srcVideo.pause(); } catch { /* ignore */ }
+        updateOutputTransport();
+      }
+    });
+  });
 }
 
 function playSequenceItem() {
@@ -567,7 +608,7 @@ function wireShortcuts() {
       else if (e.key === 'Escape') { e.preventDefault(); closeConfirm(false); }
       return;
     }
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || e.target.isContentEditable) return;
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); store.undo(); }
     else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); store.redo(); }
@@ -613,6 +654,14 @@ function closeConfirm(val) {
 }
 
 async function deleteSelected() {
+  if (store.ui.selectedCaptionId) {
+    if (await askConfirm('Delete this caption?')) {
+      if (outSeq.deleteCaption(store.ui.selectedCaptionId)) setStatus('Caption deleted');
+      else setStatus('Nothing is selected for deletion');
+    }
+    return;
+  }
+
   const sel = store.ui.selection;
   if (!sel.kind) { setStatus('Nothing is selected for deletion'); return; }
 

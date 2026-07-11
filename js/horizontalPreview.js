@@ -1,6 +1,6 @@
 // horizontalPreview.js - 16:9 canvas preview with crop/pan/zoom/blur.
 import { store } from './store.js?v=20260707-horizontal-crop';
-import { captionTextAt, drawCaption } from './captions.js?v=20260710-captions';
+import { activeCaptionText as captionTextForSequence, drawCaption } from './captions.js?v=20260711-source-anchor';
 
 let canvas, ctx, video;
 let raf = 0;
@@ -94,11 +94,11 @@ function draw() {
 }
 
 function drawActiveCaption(ctx, W, H) {
-  const text = activeCaptionText();
+  const text = currentCaptionText();
   if (text) drawCaption(ctx, W, H, text);
 }
 
-function activeCaptionText() {
+function currentCaptionText() {
   const sel = store.ui.selection;
   if (sel.kind !== 'output') return '';
   const p = store.get();
@@ -109,7 +109,7 @@ function activeCaptionText() {
     const durationMs = Math.max(250, Math.round(Math.max(0, material.out - material.in) * 1000));
     if (output.id === sel.id) {
       const localMs = Math.round(Math.max(0, ((video?.currentTime || material.in) - material.in) * 1000));
-      return captionTextAt(output.caption, sequenceMs + localMs);
+      return captionTextForSequence(p, sequenceMs + localMs);
     }
     sequenceMs += durationMs;
   }
