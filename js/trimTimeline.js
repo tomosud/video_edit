@@ -1,6 +1,6 @@
 ﻿// trimTimeline.js - source strip: IN/OUT handles, playhead, zoom, click-to-seek
-import { store } from './store.js?v=20260707-horizontal-crop';
-import { generateStrip } from './thumbnails.js?v=20260707-horizontal-crop';
+import { store } from './store.js?v=20260711-sessions';
+import { generateStrip } from './thumbnails.js?v=20260711-sessions';
 
 let els, video;
 let duration = 0;
@@ -129,5 +129,6 @@ export function setOut() {
   store.setUI({ trimOut: Math.max(video.currentTime, (store.ui.trimIn || 0) + 0.1) });
   layout();
 }
+
 
 

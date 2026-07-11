@@ -1,5 +1,5 @@
-// horizontalPreview.js - 16:9 canvas preview with crop/pan/zoom/blur.
-import { store } from './store.js?v=20260707-horizontal-crop';
+﻿// horizontalPreview.js - 16:9 canvas preview with crop/pan/zoom/blur.
+import { store } from './store.js?v=20260711-sessions';
 import { activeCaptionText as captionTextForSequence, captionAbsolute, captionTextAt, drawCaption } from './captions.js?v=20260711-caption-input-preview-inset';
 
 let canvas, ctx, video;
@@ -155,3 +155,4 @@ function loop() {
 
 function startLoop() { if (!raf) loop(); }
 function stopLoop() { cancelAnimationFrame(raf); raf = 0; draw(); }
+

@@ -1,6 +1,6 @@
-// export.js - deterministic frame export via Mediabunny/WebCodecs.
-import { store } from './store.js?v=20260707-horizontal-crop';
-import { freshFileFor } from './fileOpen.js?v=20260707-horizontal-crop';
+﻿// export.js - deterministic frame export via Mediabunny/WebCodecs.
+import { store } from './store.js?v=20260711-sessions';
+import { freshFileFor } from './fileOpen.js?v=20260711-sessions';
 import { activeCaptionText, drawCaption } from './captions.js?v=20260711-caption-boundary-add';
 import {
   ALL_FORMATS,
@@ -308,3 +308,4 @@ export function downloadBlob(blob, name = 'viralcut.mp4') {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
+

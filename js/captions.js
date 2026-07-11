@@ -1,4 +1,4 @@
-// captions.js - shared caption timing, density, and canvas drawing helpers
+﻿// captions.js - shared caption timing, density, and canvas drawing helpers
 
 export const MIN_CAPTION_MS = 250;
 const LINE_GAP_MS = 200;
@@ -235,3 +235,4 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y, x + w, y, rr);
   ctx.closePath();
 }
+

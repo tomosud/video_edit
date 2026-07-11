@@ -1,5 +1,5 @@
-// thumbnails.js - Mediabunny CanvasSink thumbnails, memory-only
-import { getVideoFrameCanvas } from './mediaSession.js?v=20260707-horizontal-crop';
+﻿// thumbnails.js - Mediabunny CanvasSink thumbnails, memory-only
+import { getVideoFrameCanvas } from './mediaSession.js?v=20260711-sessions';
 
 const THUMB_H = 132;
 const TARGET_SPACING = 200;
@@ -187,3 +187,4 @@ export function horizontalCropSignature(crop = {}) {
 }
 
 export function spacing() { return TARGET_SPACING; }
+

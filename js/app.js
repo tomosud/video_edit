@@ -1,14 +1,14 @@
 // app.js - entry: wire modules, selection side-effects, ranged playback, temporary export
-import { store } from './store.js?v=20260707-horizontal-crop';
-import * as fileOpen from './fileOpen.js?v=20260707-horizontal-crop';
-import * as db from './db.js?v=20260707-horizontal-crop';
-import * as cropPreview from './cropPreview.js?v=20260711-caption-input-preview-inset';
-import * as horizontalPreview from './horizontalPreview.js?v=20260711-caption-input-preview-inset';
-import * as srcTimeline from './sourceTimeline.js?v=20260707-horizontal-crop';
-import * as frameStrip from './frameStrip.js?v=20260707-horizontal-crop';
-import * as shelf from './materialShelf.js?v=20260711-material-shelf-groups';
-import * as outSeq from './outputSequenceTimeline.js?v=20260711-material-shelf-groups';
-import { exportProject, downloadBlob } from './export.js?v=20260711-caption-boundary-add';
+import { store } from './store.js?v=20260711-sessions';
+import * as fileOpen from './fileOpen.js?v=20260711-sessions';
+import * as db from './db.js?v=20260711-sessions';
+import * as cropPreview from './cropPreview.js?v=20260711-sessions';
+import * as horizontalPreview from './horizontalPreview.js?v=20260711-sessions';
+import * as srcTimeline from './sourceTimeline.js?v=20260711-sessions';
+import * as frameStrip from './frameStrip.js?v=20260711-sessions';
+import * as shelf from './materialShelf.js?v=20260711-sessions';
+import * as outSeq from './outputSequenceTimeline.js?v=20260711-sessions';
+import { exportProject, downloadBlob } from './export.js?v=20260711-sessions';
 import { fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js?v=20260707-horizontal-crop';
 
 const $ = (id) => document.getElementById(id);
@@ -33,6 +33,7 @@ let sequence = null;
 let transportRaf = 0;
 let sequenceAdvancing = false;
 let activeArea = 'timeline';
+const SESSION_LIMIT = 5;
 
 function init() {
   cropPreview.init(el.vertCanvas, el.srcVideo);
@@ -54,12 +55,25 @@ function init() {
 }
 
 async function bootstrap() {
-  if (await store.restore()) {
-    const restored = await fileOpen.restoreSavedMedia();
-    refreshStateViews();
-    setStatus(restored.length ? 'Restored edit' : 'Restored edit; video files are missing');
+  const requested = urlSessionId();
+  let restored = false;
+  if (requested) {
+    store.setSessionId(requested);
+    restored = await store.restore(requested);
   } else {
-    await resetTemporaryEdit('Temporary edit ready', { clearSaved: true });
+    const latest = await db.latestSession().catch(() => null);
+    const sessionId = latest?.id || makeSessionId();
+    setUrlSession(sessionId);
+    store.setSessionId(sessionId);
+    restored = latest ? await store.restore(sessionId) : await store.restoreLegacyAutosave();
+  }
+
+  if (restored) {
+    const mediaRestored = await fileOpen.restoreSavedMedia();
+    refreshStateViews();
+    setStatus(mediaRestored.length ? 'Restored edit' : 'Restored edit; video files are missing');
+  } else {
+    await resetTemporaryEdit('Temporary edit ready');
   }
   updateChrome();
   updatePlayInfo();
@@ -68,11 +82,12 @@ async function bootstrap() {
 // ---------- menu ----------
 function wireMenu() {
   el.btnNewProject.onclick = guard(async () => {
-    if (hasWork()) {
-      if (!await askConfirm('Start a new edit?\nCurrent work will be lost.', 'New', 'New Edit')) return;
-      if (!await askConfirm('Confirm again.\nCurrent work will be lost.', 'New', 'New Edit')) return;
-    }
-    await resetTemporaryEdit('State cleared', { clearSaved: true });
+    await store.flushSave();
+    await db.pruneSessions(SESSION_LIMIT).catch(() => {});
+    const choice = await askSessionChoice(await db.listSessions().catch(() => []));
+    if (!choice) return;
+    if (choice === 'new') await openSession(makeSessionId(), { restore: false });
+    else await openSession(choice, { restore: true });
   });
   el.btnAddVideo.onclick = guard(async () => {
     el.btnAddVideo.disabled = true;
@@ -87,22 +102,51 @@ function wireMenu() {
   el.sourceSelect.onchange = () => store.setUI({ activeSourceId: el.sourceSelect.value });
 }
 
-async function resetTemporaryEdit(message, { clearSaved = false } = {}) {
+async function resetTemporaryEdit(message) {
   stopSequence();
   try { el.srcVideo.pause(); } catch { /* ignore */ }
   activeUrl = null;
   pendingSeek = null;
   lastSelKey = '';
   fileOpen.clear();
-  if (clearSaved) {
-    await Promise.all([
-      db.clearAutosave(),
-      db.clearHistory(),
-      fileOpen.clearSavedMedia(),
-    ]);
-  }
   store.load({ name: 'temporary' });
   setStatus(message);
+}
+
+async function openSession(sessionId, { restore }) {
+  stopSequence();
+  try { el.srcVideo.pause(); } catch { /* ignore */ }
+  activeUrl = null;
+  pendingSeek = null;
+  lastSelKey = '';
+  fileOpen.clear();
+  store.setSessionId(sessionId);
+  setUrlSession(sessionId);
+  const restored = restore && await store.restore(sessionId);
+  if (restored) {
+    const mediaRestored = await fileOpen.restoreSavedMedia();
+    refreshStateViews();
+    setStatus(mediaRestored.length ? 'Session opened' : 'Session opened; video files are missing');
+  } else {
+    store.load({ name: 'temporary' });
+    setStatus('New session ready');
+  }
+  updateChrome();
+  updatePlayInfo();
+}
+
+function urlSessionId() {
+  return new URL(location.href).searchParams.get('session');
+}
+
+function setUrlSession(sessionId) {
+  const url = new URL(location.href);
+  url.searchParams.set('session', sessionId);
+  history.replaceState(null, '', url);
+}
+
+function makeSessionId() {
+  return 'ses_' + (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9));
 }
 
 function hasWork() {
@@ -659,7 +703,10 @@ function wireShortcuts() {
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); store.undo(); }
     else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); store.redo(); }
-    else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); setStatus('Autosave is active; use Export to write a video'); }
+    else if (mod && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      store.flushSave().then(() => setStatus(store.get().sources.length ? 'Session saved' : 'Empty project is not saved'));
+    }
     else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
     else if (e.key === ' ') {
       e.preventDefault();
@@ -698,6 +745,44 @@ function closeConfirm(val) {
   el.confirm.hidden = true;
   const r = confirmResolve; confirmResolve = null;
   if (r) r(val);
+}
+
+function askSessionChoice(sessions) {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay session-picker-overlay';
+  const box = document.createElement('div');
+  box.className = 'overlay-box session-picker-box';
+  const rows = sessions.map(s => {
+    const updated = s.updatedAt || s.savedAt || 0;
+    const date = updated ? new Date(updated).toLocaleString() : '';
+    return `
+      <button class="session-choice" type="button" data-session-id="${escapeAttr(s.id)}">
+        <span class="session-choice-title">${escapeHtml(s.name || 'Untitled edit')}</span>
+        <span class="session-choice-meta">${escapeHtml(date)} / ${s.sourceCount || 0} videos / ${s.outputCount || 0} cuts</span>
+      </button>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="session-picker-title">New or Open Session</div>
+    <button class="session-choice session-choice-new" type="button" data-session-id="new">
+      <span class="session-choice-title">New Project</span>
+      <span class="session-choice-meta">Create a new URL session</span>
+    </button>
+    <div class="session-picker-list">${rows || '<div class="session-picker-empty">No saved sessions</div>'}</div>
+    <div class="session-picker-actions"><button class="btn btn-sm" type="button" data-session-cancel>Cancel</button></div>`;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  return new Promise((resolve) => {
+    const finish = (value) => {
+      overlay.remove();
+      resolve(value);
+    };
+    overlay.addEventListener('pointerdown', (e) => { if (e.target === overlay) finish(null); });
+    box.querySelector('[data-session-cancel]').onclick = () => finish(null);
+    for (const btn of box.querySelectorAll('[data-session-id]')) {
+      btn.onclick = () => finish(btn.dataset.sessionId);
+    }
+    box.querySelector('[data-session-id]')?.focus();
+  });
 }
 
 async function deleteSelected() {
@@ -858,6 +943,16 @@ function even(v) {
   return Math.max(2, Math.round(v / 2) * 2);
 }
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[ch]));
+}
+
+function escapeAttr(s) {
+  return escapeHtml(s).replace(/`/g, '&#96;');
+}
+
 // ---------- state -> UI ----------
 function onState(project, ui) {
   // source dropdown
@@ -970,3 +1065,4 @@ function guard(fn) {
 }
 
 init();
+

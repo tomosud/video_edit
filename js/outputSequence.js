@@ -1,6 +1,6 @@
 // outputSequence.js - output clips (editing area): timed layout, captions, drop/reorder
-import { store, uid } from './store.js?v=20260707-horizontal-crop';
-import { cardThumb, cloneCanvas } from './thumbnails.js?v=20260707-horizontal-crop';
+import { store, uid } from './store.js?v=20260711-sessions';
+import { cardThumb, cloneCanvas } from './thumbnails.js?v=20260711-sessions';
 import { fmtDur } from './util.js?v=20260707-horizontal-crop';
 import { MIN_CAPTION_MS, captionDensity, defaultCaption, densityClass, normalizeCaption } from './captions.js?v=20260710-captions';
 
@@ -81,7 +81,6 @@ function render() {
     requestAnimationFrame(() => captionEditorEl?.querySelector(`textarea[data-id="${id}"]`)?.focus());
   }
 }
-
 function midSig(src, m) { return Math.round((m.in + m.out) / 2 * (src.fps || 30)); }
 function displayName(m, src) { return (m?.title || '').trim() || src?.fileName || 'Untitled material'; }
 function escapeHtml(s) {
@@ -456,3 +455,4 @@ function onDrop(e) {
     });
   }
 }
+

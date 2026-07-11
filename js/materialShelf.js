@@ -1,6 +1,6 @@
-// materialShelf.js - cutout material cards: select, double-click play, drag to output
-import { store } from './store.js?v=20260707-horizontal-crop';
-import { horizontalCardThumb, horizontalCropSignature, cloneCanvas } from './thumbnails.js?v=20260711-horizontal-thumb-crop';
+﻿// materialShelf.js - cutout material cards: select, double-click play, drag to output
+import { store } from './store.js?v=20260711-sessions';
+import { horizontalCardThumb, horizontalCropSignature, cloneCanvas } from './thumbnails.js?v=20260711-sessions';
 import { fmtDur } from './util.js?v=20260707-horizontal-crop';
 
 let shelfEl, countEl;
@@ -211,3 +211,4 @@ export function deleteMaterial(id) {
   thumbSig.delete(id);
   thumbBusy.delete(id);
 }
+

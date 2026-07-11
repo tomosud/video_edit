@@ -1,6 +1,6 @@
-// outputSequenceTimeline.js - edit timeline with playhead, wheel zoom/pan, and anchored captions
-import { store, uid } from './store.js?v=20260707-horizontal-crop';
-import { horizontalCardThumb, horizontalCropSignature, cloneCanvas } from './thumbnails.js?v=20260711-horizontal-thumb-crop';
+﻿// outputSequenceTimeline.js - edit timeline with playhead, wheel zoom/pan, and anchored captions
+import { store, uid } from './store.js?v=20260711-sessions';
+import { horizontalCardThumb, horizontalCropSignature, cloneCanvas } from './thumbnails.js?v=20260711-sessions';
 import { fmtDur } from './util.js?v=20260707-horizontal-crop';
 import { MIN_CAPTION_MS, captionAbsolute, captionDensity, captionLines, densityClass } from './captions.js?v=20260711-edit-timeline-drag';
 
@@ -984,3 +984,4 @@ function escapeHtml(s) {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[ch]));
 }
+

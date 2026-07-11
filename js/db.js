@@ -1,7 +1,7 @@
-// db.js - IndexedDB wrapper: autosave, media files, history, model/thumb cache
+﻿// db.js - IndexedDB wrapper: session autosave, media files, history, model/thumb cache
 const DB_NAME = 'viralcut';
-const DB_VERSION = 2;
-const STORES = ['autosave', 'handles', 'history', 'media', 'models', 'thumbs'];
+const DB_VERSION = 3;
+const STORES = ['autosave', 'handles', 'history', 'media', 'models', 'thumbs', 'sessions', 'sessionHistory', 'sessionMedia'];
 
 let _db = null;
 
@@ -53,6 +53,24 @@ export function clear(store) {
   return tx(store, 'readwrite', (os) => os.clear());
 }
 
+export async function all(store) {
+  const db = await open();
+  return new Promise((resolve, reject) => {
+    const r = db.transaction(store, 'readonly').objectStore(store).getAll();
+    r.onsuccess = () => resolve(r.result || []);
+    r.onerror = () => reject(r.error);
+  });
+}
+
+export async function keys(store) {
+  const db = await open();
+  return new Promise((resolve, reject) => {
+    const r = db.transaction(store, 'readonly').objectStore(store).getAllKeys();
+    r.onsuccess = () => resolve(r.result || []);
+    r.onerror = () => reject(r.error);
+  });
+}
+
 // --- convenience ---
 export const loadAutosave   = () => get('autosave', 'current');
 export const saveAutosave   = (state) => set('autosave', 'current', state);
@@ -66,3 +84,50 @@ export const deleteMedia    = (sourceId) => del('media', sourceId);
 export const clearMedia     = () => clear('media');
 export const saveHandle     = (key, handle) => set('handles', key, handle);
 export const loadHandle      = (key) => get('handles', key);
+
+// --- session persistence ---
+export const loadSession = (sessionId) => get('sessions', sessionId);
+export const saveSession = (sessionId, state) => set('sessions', sessionId, { ...state, id: sessionId });
+export const loadSessionHistory = (sessionId) => get('sessionHistory', sessionId);
+export const saveSessionHistory = (sessionId, h) => set('sessionHistory', sessionId, h);
+export const saveSessionMedia = (sessionId, sourceId, file) => set('sessionMedia', mediaKey(sessionId, sourceId), file);
+export const loadSessionMedia = (sessionId, sourceId) => get('sessionMedia', mediaKey(sessionId, sourceId));
+
+export async function listSessions() {
+  const sessions = await all('sessions');
+  return sessions
+    .filter(s => s?.id)
+    .sort((a, b) => (b.updatedAt || b.savedAt || 0) - (a.updatedAt || a.savedAt || 0));
+}
+
+export async function latestSession() {
+  return (await listSessions())[0] || null;
+}
+
+export async function deleteSession(sessionId) {
+  await Promise.all([
+    del('sessions', sessionId),
+    del('sessionHistory', sessionId),
+    deleteSessionMedia(sessionId),
+  ]);
+}
+
+export async function clearSessionMedia(sessionId) {
+  await deleteSessionMedia(sessionId);
+}
+
+export async function pruneSessions(max = 5) {
+  const sessions = await listSessions();
+  await Promise.all(sessions.slice(max).map(s => deleteSession(s.id)));
+}
+
+async function deleteSessionMedia(sessionId) {
+  const prefix = `${sessionId}:`;
+  const mediaKeys = await keys('sessionMedia');
+  await Promise.all(mediaKeys.filter(k => String(k).startsWith(prefix)).map(k => del('sessionMedia', k)));
+}
+
+function mediaKey(sessionId, sourceId) {
+  return `${sessionId}:${sourceId}`;
+}
+

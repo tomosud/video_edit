@@ -1,5 +1,5 @@
-// cropPreview.js - 9:16 canvas preview of the active source with crop/pan/zoom
-import { store } from './store.js?v=20260707-horizontal-crop';
+﻿// cropPreview.js - 9:16 canvas preview of the active source with crop/pan/zoom
+import { store } from './store.js?v=20260711-sessions';
 import { activeCaptionText as captionTextForSequence, captionAbsolute, captionTextAt, drawCaption } from './captions.js?v=20260711-caption-input-preview-inset';
 
 let canvas, ctx, video;
@@ -193,4 +193,5 @@ function startLoop() { if (!raf) loop(); }
 function stopLoop() { cancelAnimationFrame(raf); raf = 0; draw(); }
 
 export function stop() { stopLoop(); }
+
 

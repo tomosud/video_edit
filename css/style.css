@@ -859,6 +859,62 @@ body {
   outline: 2px solid var(--sel);
   outline-offset: 2px;
 }
+.session-picker-box {
+  text-align: left;
+  width: min(520px, calc(100vw - 28px));
+}
+.session-picker-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+.session-picker-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(52vh, 420px);
+  overflow: auto;
+  margin-top: 10px;
+}
+.session-choice {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  text-align: left;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+.session-choice:hover,
+.session-choice:focus {
+  border-color: var(--sel);
+  outline: none;
+  background: #2b303c;
+}
+.session-choice-new {
+  border-color: rgba(79,140,255,.7);
+}
+.session-choice-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-choice-meta,
+.session-picker-empty {
+  display: block;
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-top: 3px;
+}
+.session-picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
 @media (max-width: 520px) {
   .export-mode-actions { grid-template-columns: 1fr; }
   .export-mode-btn { min-height: 54px; }

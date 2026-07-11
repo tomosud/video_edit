@@ -1,6 +1,6 @@
 ﻿// fileOpen.js - browser source media registry with IndexedDB recovery.
-import { store, uid } from './store.js?v=20260707-horizontal-crop';
-import * as db from './db.js?v=20260707-horizontal-crop';
+import { store, uid } from './store.js?v=20260711-sessions';
+import * as db from './db.js?v=20260711-sessions';
 import { hashKey } from './util.js?v=20260707-horizontal-crop';
 import { readMediaInfo } from './mediaInfo.js?v=20260707-horizontal-crop';
 
@@ -19,7 +19,8 @@ export function clear() {
 }
 
 export async function clearSavedMedia() {
-  await db.clearMedia();
+  if (store.sessionId) await db.clearSessionMedia(store.sessionId);
+  else await db.clearMedia();
 }
 
 function register(sourceId, file, handle = null) {
@@ -93,7 +94,7 @@ async function addOneVideo(file, handle = null) {
     s.mediaKey === mediaKey || (s.fileName === file.name && s.size === file.size));
   if (existing) {
     register(existing.id, file, handle);
-    db.saveMedia(existing.id, file).catch((err) => console.warn('media save failed', err));
+    saveSessionMedia(existing.id, file).catch((err) => console.warn('media save failed', err));
     store.setUI({ activeSourceId: existing.id });
     return existing.id;
   }
@@ -126,7 +127,7 @@ async function addOneVideo(file, handle = null) {
     });
     ui.activeSourceId = id;
   });
-  db.saveMedia(id, file).catch((err) => console.warn('media save failed', err));
+  saveSessionMedia(id, file).catch((err) => console.warn('media save failed', err));
   return id;
 }
 
@@ -137,12 +138,26 @@ export async function restoreSavedMedia() {
       restored.push(source.id);
       continue;
     }
-    const file = await db.loadMedia(source.id).catch(() => null);
+    const file = await loadSessionMedia(source.id).catch(() => null);
     if (!file) continue;
     register(source.id, file, null);
+    if (store.sessionId) db.saveSessionMedia(store.sessionId, source.id, file).catch(() => {});
     restored.push(source.id);
   }
   return restored;
+}
+
+async function saveSessionMedia(sourceId, file) {
+  if (store.sessionId) return db.saveSessionMedia(store.sessionId, sourceId, file);
+  return db.saveMedia(sourceId, file);
+}
+
+async function loadSessionMedia(sourceId) {
+  if (store.sessionId) {
+    const sessionFile = await db.loadSessionMedia(store.sessionId, sourceId).catch(() => null);
+    if (sessionFile) return sessionFile;
+  }
+  return db.loadMedia(sourceId);
 }
 
 function pickWithInput() {
@@ -221,4 +236,5 @@ async function probeFps(url) {
 
 export async function relinkAll() { return []; }
 export async function relinkOne() { return false; }
+
 

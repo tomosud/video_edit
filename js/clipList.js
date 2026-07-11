@@ -1,6 +1,6 @@
 ﻿// clipList.js - output clip cards: add, select, delete, drag-reorder
-import { store, uid } from './store.js?v=20260707-horizontal-crop';
-import { singleThumb } from './thumbnails.js?v=20260707-horizontal-crop';
+import { store, uid } from './store.js?v=20260711-sessions';
+import { singleThumb } from './thumbnails.js?v=20260711-sessions';
 import { fmtDur } from './util.js?v=20260707-horizontal-crop';
 
 let listEl, totalEl;
@@ -121,5 +121,6 @@ function reorder(fromId, toId) {
     clips.splice(toIdx, 0, moved);
   });
 }
+
 
 
