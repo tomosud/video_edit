@@ -1,6 +1,6 @@
 // cropPreview.js - 9:16 canvas preview of the active source with crop/pan/zoom
 import { store } from './store.js?v=20260707-horizontal-crop';
-import { activeCaptionText as captionTextForSequence, drawCaption } from './captions.js?v=20260711-source-anchor';
+import { activeCaptionText as captionTextForSequence, drawCaption } from './captions.js?v=20260711-bilingual-captions';
 
 let canvas, ctx, video;
 let raf = 0;

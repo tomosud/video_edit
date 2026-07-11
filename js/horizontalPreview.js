@@ -1,6 +1,6 @@
 // horizontalPreview.js - 16:9 canvas preview with crop/pan/zoom/blur.
 import { store } from './store.js?v=20260707-horizontal-crop';
-import { activeCaptionText as captionTextForSequence, drawCaption } from './captions.js?v=20260711-source-anchor';
+import { activeCaptionText as captionTextForSequence, drawCaption } from './captions.js?v=20260711-bilingual-captions';
 
 let canvas, ctx, video;
 let raf = 0;

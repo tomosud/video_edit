@@ -514,9 +514,16 @@ body {
   box-shadow: 0 0 0 1px rgba(0,0,0,.55);
   z-index: 6;
 }
-.caption-edit-textarea {
+.caption-edit-panel {
   position: absolute;
   inset: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  overflow: hidden;
+  border-radius: 3px;
+}
+.caption-edit-textarea {
   width: 100%;
   height: 100%;
   resize: none;
@@ -528,6 +535,10 @@ body {
   padding: 3px 14px;
   outline: none;
   overflow: auto;
+}
+.caption-edit-textarea + .caption-edit-textarea {
+  color: #ffe873;
+  border-left: 1px solid rgba(255,255,255,.18);
 }
 .caption-bar.warn {
   --caption-border: #ffca58;
@@ -560,12 +571,23 @@ body {
 .caption-label {
   position: absolute;
   inset: 0;
-  display: block;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   overflow: hidden;
-  overflow-y: auto;
   white-space: pre-wrap;
-  padding: 6px 16px;
+  padding: 0 14px;
   pointer-events: auto;
+}
+.caption-label-primary,
+.caption-label-secondary {
+  min-width: 0;
+  overflow: auto;
+  padding: 6px 8px;
+  white-space: pre-wrap;
+}
+.caption-label-secondary {
+  color: #ffe873;
+  border-left: 1px solid rgba(255,255,255,.22);
 }
 .caption-anchor-stem {
   position: absolute;

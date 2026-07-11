@@ -2,7 +2,7 @@
 import { store, uid } from './store.js?v=20260707-horizontal-crop';
 import { cardThumb, cloneCanvas } from './thumbnails.js?v=20260707-horizontal-crop';
 import { fmtDur } from './util.js?v=20260707-horizontal-crop';
-import { MIN_CAPTION_MS, captionAbsolute, captionDensity, densityClass } from './captions.js?v=20260711-source-anchor';
+import { MIN_CAPTION_MS, captionAbsolute, captionDensity, densityClass } from './captions.js?v=20260711-bilingual-captions';
 
 const MIN_SPAN_SEC = 1;
 const MIN_CLIP_PX = 28;
@@ -139,6 +139,7 @@ function clampCaptionAnchors(item) {
     if (caption.endOffsetMs - caption.startOffsetMs < MIN_CAPTION_MS) caption.endOffsetMs = caption.startOffsetMs + MIN_CAPTION_MS;
     if (!caption.id) caption.id = uid('cap');
     if (caption.text == null) caption.text = '';
+    if (caption.secondaryText == null) caption.secondaryText = '';
   }
 }
 
@@ -212,8 +213,13 @@ function captionBar(item, caption, layout) {
   bar.dataset.outputId = item.output.id;
   bar.style.left = left + 'px';
   bar.style.width = width + 'px';
-  const label = (caption.text || '').trim() || '(caption)';
-  const lines = Math.max(1, label.split(/\r?\n/).length);
+  const primaryLabel = (caption.text || '').trim() || '(caption)';
+  const secondaryLabel = (caption.secondaryText || '').trim() || '...';
+  const lines = Math.max(
+    1,
+    primaryLabel.split(/\r?\n/).length,
+    (caption.secondaryText || '').trim() ? secondaryLabel.split(/\r?\n/).length : 1,
+  );
   const barHeight = Math.min(88, Math.max(42, 28 + lines * 17));
   bar.style.height = barHeight + 'px';
   bar.title = `Cut ${item.index + 1} anchor ${fmtDur((caption.sourceAnchorMs || sourceMs(item.material.in)) / 1000)} / ${captionDensity(abs).toFixed(1)} chars/sec`;
@@ -221,7 +227,10 @@ function captionBar(item, caption, layout) {
   bar.style.setProperty('--anchor-x', anchorLocal + 'px');
   bar.innerHTML =
     '<span class="caption-handle caption-handle-l" data-edge="start"></span>' +
-    `<span class="caption-label">${escapeHtml(label)}</span>` +
+    '<span class="caption-label">' +
+    `<span class="caption-label-primary">${escapeHtml(primaryLabel)}</span>` +
+    `<span class="caption-label-secondary">${escapeHtml(secondaryLabel)}</span>` +
+    '</span>' +
     '<span class="caption-anchor-stem"></span><span class="caption-anchor-dot"></span>' +
     '<span class="caption-handle caption-handle-r" data-edge="end"></span>';
   wireCaptionPointer(bar, caption.id);
@@ -282,14 +291,21 @@ function createCaptionAt(clientX) {
   const anchorMs = clampMs(xToMs(clientX), layout);
   const item = itemAtMs(layout, anchorMs);
   if (!item) return;
-  const halfMs = 650;
+  const gap = captionGapAt(layout, anchorMs);
+  if (!gap || gap.endMs - gap.startMs < MIN_CAPTION_MS) return;
+  const defaultStart = anchorMs - 650;
+  const defaultEnd = anchorMs + 650;
+  const startMs = Math.max(gap.startMs, defaultStart);
+  const endMs = Math.min(gap.endMs, defaultEnd);
+  if (endMs - startMs < MIN_CAPTION_MS) return;
   const id = uid('cap');
   const caption = {
     id,
     text: '',
+    secondaryText: '',
     sourceAnchorMs: sourceAnchorFromSequenceMs(item, anchorMs),
-    startOffsetMs: -halfMs,
-    endOffsetMs: halfMs,
+    startOffsetMs: startMs - anchorMs,
+    endOffsetMs: endMs - anchorMs,
   };
   store.update((p, ui) => {
     const out = p.outputs.find(o => o.id === item.output.id);
@@ -315,44 +331,62 @@ function mountCaptionTextEdit(captionId) {
   if (!found) return;
   const bar = listEl.querySelector(`.caption-bar[data-id="${captionId}"]`);
   if (!bar) return;
-  const existing = bar.querySelector('.caption-edit-textarea');
+  const existing = bar.querySelector('.caption-edit-panel textarea');
   if (existing) {
     existing.focus();
     existing.select();
     return;
   }
   editingCaptionId = captionId;
-  const textarea = document.createElement('textarea');
-  textarea.className = 'caption-edit-textarea';
-  textarea.value = found.caption.text || '';
-  textarea.rows = 2;
-  textarea.addEventListener('pointerdown', (e) => e.stopPropagation());
-  textarea.addEventListener('click', (e) => e.stopPropagation());
-  textarea.addEventListener('dblclick', (e) => e.stopPropagation());
-  textarea.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') textarea.blur();
-    if (e.key === 'Escape') {
-      textarea.value = found.caption.text || '';
-      textarea.blur();
-    }
-  });
-  textarea.addEventListener('input', () => {
+  const panel = document.createElement('div');
+  panel.className = 'caption-edit-panel';
+  const primary = captionEditTextarea(found.caption.text || '', 'Primary');
+  const secondary = captionEditTextarea(found.caption.secondaryText || '', 'Second');
+  const sync = () => {
     store.updateLive((p, ui) => {
       const cur = findCaption(p, captionId);
       if (!cur) return;
-      cur.caption.text = textarea.value;
+      cur.caption.text = primary.value;
+      cur.caption.secondaryText = secondary.value;
       ui.selectedCaptionId = captionId;
     });
-  });
-  textarea.addEventListener('blur', () => {
-    editingCaptionId = null;
-    render();
-  });
-  bar.replaceChildren(textarea);
+  };
+  for (const textarea of [primary, secondary]) {
+    textarea.addEventListener('pointerdown', (e) => e.stopPropagation());
+    textarea.addEventListener('click', (e) => e.stopPropagation());
+    textarea.addEventListener('dblclick', (e) => e.stopPropagation());
+    textarea.addEventListener('input', sync);
+    textarea.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') textarea.blur();
+      if (e.key === 'Escape') {
+        primary.value = found.caption.text || '';
+        secondary.value = found.caption.secondaryText || '';
+        textarea.blur();
+      }
+    });
+    textarea.addEventListener('blur', () => {
+      requestAnimationFrame(() => {
+        if (panel.contains(document.activeElement)) return;
+        editingCaptionId = null;
+        render();
+      });
+    });
+  }
+  panel.append(primary, secondary);
+  bar.replaceChildren(panel);
   requestAnimationFrame(() => {
-    textarea.focus();
-    textarea.select();
+    primary.focus();
+    primary.select();
   });
+}
+
+function captionEditTextarea(value, label) {
+  const textarea = document.createElement('textarea');
+  textarea.className = 'caption-edit-textarea';
+  textarea.value = value;
+  textarea.placeholder = label;
+  textarea.rows = 2;
+  return textarea;
 }
 
 function wireCaptionPointer(bar, captionId) {
@@ -509,6 +543,24 @@ function resizeCaptionAbsolute(project, captionId, edge, targetMs) {
     const nextEnd = Math.max(targetMs, abs.anchorMs + MIN_CAPTION_MS);
     found.caption.endOffsetMs = Math.max(MIN_CAPTION_MS, nextEnd - abs.anchorMs);
   }
+}
+
+function captionGapAt(layout, anchorMs) {
+  const ranges = [];
+  for (const item of layout.items) {
+    for (const caption of captionsOf(item.output)) {
+      const abs = captionAbsolute(caption, item.startMs, item.material);
+      if (abs) ranges.push({ startMs: abs.startMs, endMs: abs.endMs });
+    }
+  }
+  ranges.sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
+  let gapStart = 0;
+  for (const range of ranges) {
+    if (anchorMs >= range.startMs && anchorMs < range.endMs) return null;
+    if (anchorMs < range.startMs) return { startMs: gapStart, endMs: Math.min(range.startMs, layout.totalMs) };
+    gapStart = Math.max(gapStart, range.endMs);
+  }
+  return { startMs: gapStart, endMs: layout.totalMs };
 }
 
 function itemAtMs(layout, ms) {

@@ -2,13 +2,13 @@
 import { store } from './store.js?v=20260707-horizontal-crop';
 import * as fileOpen from './fileOpen.js?v=20260707-horizontal-crop';
 import * as db from './db.js?v=20260707-horizontal-crop';
-import * as cropPreview from './cropPreview.js?v=20260711-source-anchor';
-import * as horizontalPreview from './horizontalPreview.js?v=20260711-source-anchor';
+import * as cropPreview from './cropPreview.js?v=20260711-bilingual-captions';
+import * as horizontalPreview from './horizontalPreview.js?v=20260711-bilingual-captions';
 import * as srcTimeline from './sourceTimeline.js?v=20260707-horizontal-crop';
 import * as frameStrip from './frameStrip.js?v=20260707-horizontal-crop';
 import * as shelf from './materialShelf.js?v=20260707-horizontal-crop';
-import * as outSeq from './outputSequenceTimeline.js?v=20260711-caption-ui-hitareas';
-import { exportProject, downloadBlob } from './export.js?v=20260711-source-anchor';
+import * as outSeq from './outputSequenceTimeline.js?v=20260711-bilingual-captions';
+import { exportProject, downloadBlob } from './export.js?v=20260711-bilingual-captions';
 import { fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js?v=20260707-horizontal-crop';
 
 const $ = (id) => document.getElementById(id);

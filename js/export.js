@@ -1,7 +1,7 @@
 // export.js - deterministic frame export via Mediabunny/WebCodecs.
 import { store } from './store.js?v=20260707-horizontal-crop';
 import { freshFileFor } from './fileOpen.js?v=20260707-horizontal-crop';
-import { activeCaptionText, drawCaption } from './captions.js?v=20260711-source-anchor';
+import { activeCaptionText, drawCaption } from './captions.js?v=20260711-bilingual-captions';
 import {
   ALL_FORMATS,
   BlobSource,
