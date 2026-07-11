@@ -12,28 +12,28 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/store.js":                   "./js/store.js?v=20260712c",
-      "./js/db.js":                      "./js/db.js?v=20260712c",
-      "./js/util.js":                    "./js/util.js?v=20260712c",
-      "./js/fileOpen.js":                "./js/fileOpen.js?v=20260712c",
-      "./js/mediaInfo.js":               "./js/mediaInfo.js?v=20260712c",
-      "./js/mediaSession.js":            "./js/mediaSession.js?v=20260712c",
-      "./js/mediabunny.js":              "./js/mediabunny.js?v=20260712c",
-      "./js/thumbnails.js":              "./js/thumbnails.js?v=20260712c",
-      "./js/sourceTimeline.js":          "./js/sourceTimeline.js?v=20260712c",
-      "./js/frameStrip.js":              "./js/frameStrip.js?v=20260712c",
-      "./js/materialShelf.js":           "./js/materialShelf.js?v=20260712c",
-      "./js/outputSequenceTimeline.js":  "./js/outputSequenceTimeline.js?v=20260712c",
-      "./js/captions.js":                "./js/captions.js?v=20260712c",
-      "./js/drawing.js":                 "./js/drawing.js?v=20260712c",
-      "./js/cropPreview.js":             "./js/cropPreview.js?v=20260712c",
-      "./js/horizontalPreview.js":       "./js/horizontalPreview.js?v=20260712c",
-      "./js/export.js":                  "./js/export.js?v=20260712c",
+      "./js/store.js":                   "./js/store.js?v=20260712f",
+      "./js/db.js":                      "./js/db.js?v=20260712f",
+      "./js/util.js":                    "./js/util.js?v=20260712f",
+      "./js/fileOpen.js":                "./js/fileOpen.js?v=20260712f",
+      "./js/mediaInfo.js":               "./js/mediaInfo.js?v=20260712f",
+      "./js/mediaSession.js":            "./js/mediaSession.js?v=20260712f",
+      "./js/mediabunny.js":              "./js/mediabunny.js?v=20260712f",
+      "./js/thumbnails.js":              "./js/thumbnails.js?v=20260712f",
+      "./js/sourceTimeline.js":          "./js/sourceTimeline.js?v=20260712f",
+      "./js/frameStrip.js":              "./js/frameStrip.js?v=20260712f",
+      "./js/materialShelf.js":           "./js/materialShelf.js?v=20260712f",
+      "./js/outputSequenceTimeline.js":  "./js/outputSequenceTimeline.js?v=20260712f",
+      "./js/captions.js":                "./js/captions.js?v=20260712f",
+      "./js/drawing.js":                 "./js/drawing.js?v=20260712f",
+      "./js/cropPreview.js":             "./js/cropPreview.js?v=20260712f",
+      "./js/horizontalPreview.js":       "./js/horizontalPreview.js?v=20260712f",
+      "./js/export.js":                  "./js/export.js?v=20260712f",
       "./lib/mediabunny.min.js":         "./lib/mediabunny.min.js?v=mb-1"
     }
   }
   </script>
-  <link rel="stylesheet" href="css/style.css?v=20260712c">
+  <link rel="stylesheet" href="css/style.css?v=20260712f">
 </head>
 <body>
   <div id="app">
@@ -41,23 +41,23 @@
     <header id="menu">
       <span class="brand">ViralCut</span>
       <a class="repo-link" href="https://github.com/tomosud/video_edit" target="_blank" rel="noopener">GitHub</a>
-      <button id="btnNewProject" class="btn">New / Sessions</button>
+      <button id="btnNewProject" class="btn">🗂 Sessions</button>
       <span class="sep"></span>
-      <button id="btnAddVideo" class="btn" title="Click or drop video files here">Add Video</button>
+      <button id="btnAddVideo" class="btn" title="Click or drop video files here">＋🎬 Add Video</button>
       <select id="sourceSelect" class="sel" disabled></select>
       <div id="sourcePicker" class="source-picker"></div>
       <span class="sep"></span>
-      <button id="btnUndo" class="btn" disabled title="Ctrl+Z">Undo</button>
-      <button id="btnRedo" class="btn" disabled title="Ctrl+Shift+Z">Redo</button>
+      <button id="btnUndo" class="btn" disabled title="Ctrl+Z">↩ Undo</button>
+      <button id="btnRedo" class="btn" disabled title="Ctrl+Shift+Z">↪ Redo</button>
       <span class="sep"></span>
-      <button id="btnExport" class="btn btn-accent" disabled>ExportVideo</button>
+      <button id="btnExport" class="btn btn-accent" disabled>⬇ Export</button>
       <span class="spacer"></span>
       <span id="status" class="status">Temporary edit ready</span>
     </header>
 
     <section id="srcPane" class="pane area-pane" data-area="timeline">
       <div class="pane-head">
-        <span>1 Cut / Split</span>
+        <span class="step-title"><span class="step-badge">1</span><span class="head-icon">✂</span><span>Cut / Split</span></span>
         <span class="hint">Click to seek / double-click empty space to make cut stock / double-click a cut to edit</span>
         <span class="spacer"></span>
         <span id="srcRange" class="time">-</span>
@@ -80,17 +80,17 @@
     </section>
 
     <section id="workPane" class="area-pane" data-area="source">
-      <div id="shelfPane" class="pane">
-        <div class="pane-head"><span>2 Cut Stock</span><span class="spacer"></span><span id="shelfCount" class="time">0</span></div>
+      <div id="shelfPane" class="pane" data-panel="stock">
+        <div class="pane-head"><span class="step-title"><span class="step-badge">2</span><span class="head-icon">📦</span><span>Cut Stock</span></span><span class="spacer"></span><span id="shelfCount" class="time">0</span></div>
         <div id="shelf" class="shelf">
           <div class="placeholder">Split cuts on the timeline</div>
         </div>
       </div>
       <div class="pane-splitter" data-splitter="materials" title="Drag to resize materials"></div>
 
-      <div id="origPane" class="pane crop-hover-target">
+      <div id="origPane" class="pane crop-hover-target preview-monitor" data-panel="monitor">
         <div class="pane-head">
-          <span>Horizontal Preview 16:9</span>
+          <span class="monitor-title"><span class="head-icon">▣</span><span>Monitor 16:9</span></span>
           <span class="spacer"></span>
           <span class="hint crop-edit-hint">Double-click to edit crop</span>
           <span id="origTime" class="time">0:00 / 0:00</span>
@@ -108,8 +108,8 @@
           <div id="seekHead" class="seek-head"></div>
         </div>
         <div class="transport source-transport">
-          <button id="btnPlay" class="btn" title="Space">Play</button>
-          <button id="btnLoop" class="btn" title="Range loop">Loop</button>
+          <button id="btnPlay" class="btn" title="Space">▶ Play</button>
+          <button id="btnLoop" class="btn" title="Range loop">🔁 Loop</button>
           <span class="spacer"></span>
           <span id="frameInfo" class="time frame-info">-</span>
         </div>
@@ -123,8 +123,8 @@
       </div>
       <div class="pane-splitter" data-splitter="vertical" title="Drag to resize vertical preview"></div>
 
-      <div id="vertPane" class="pane crop-hover-target">
-        <div class="pane-head"><span>Vertical Preview 9:16</span><span class="spacer"></span><span class="hint crop-edit-hint">Double-click to edit crop</span></div>
+      <div id="vertPane" class="pane crop-hover-target preview-monitor" data-panel="monitor">
+        <div class="pane-head"><span class="monitor-title"><span class="head-icon">▥</span><span>Monitor 9:16</span></span><span class="spacer"></span><span class="hint crop-edit-hint">Double-click to edit crop</span></div>
         <div class="preview-wrap">
           <canvas id="vertCanvas"></canvas>
         </div>
@@ -140,9 +140,9 @@
 
     <section id="outPane" class="pane area-pane" data-area="edit">
       <div class="pane-head">
-        <span>3 Edit</span>
-        <button id="btnPlayOut" class="btn btn-sm" disabled title="Play from start">Play From Start</button>
-        <button id="btnStopOut" class="btn btn-sm" disabled title="Pause or resume">Pause</button>
+        <span class="step-title"><span class="step-badge">3</span><span class="head-icon">🎞</span><span>Edit</span></span>
+        <button id="btnPlayOut" class="btn btn-sm" disabled title="Play from start">▶ From Start</button>
+        <button id="btnStopOut" class="btn btn-sm" disabled title="Pause or resume">⏸ Pause</button>
         <span class="hint">Wheel to zoom / right-drag to pan / drag playhead / double-click empty caption lane to add / double-click caption to type</span>
         <span class="spacer"></span>
         <span id="totalDur" class="time">Total 0:00</span>
@@ -195,6 +195,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260712c"></script>
+  <script type="module" src="js/app.js?v=20260712f"></script>
 </body>
 </html>

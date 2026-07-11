@@ -141,7 +141,7 @@ function card(m, selected) {
   el.onclick = () => store.select('material', m.id);
   el.ondblclick = (e) => {
     if (e.target.closest('.material-title')) return;
-    onPlay(m.in, m.out);
+    onPlay(m.in, m.out, 'stock');
   };
   meta.querySelector('.material-title').ondblclick = (e) => {
     e.preventDefault();

@@ -240,8 +240,8 @@ function wireTransport() {
     else el.srcVideo.pause();
   };
   el.btnLoop.onclick = () => { loopEnabled = !loopEnabled; el.btnLoop.style.color = loopEnabled ? 'var(--accent)' : ''; };
-  el.srcVideo.addEventListener('play', () => el.btnPlay.textContent = 'Pause');
-  el.srcVideo.addEventListener('pause', () => el.btnPlay.textContent = 'Play');
+  el.srcVideo.addEventListener('play', () => el.btnPlay.textContent = '⏸ Pause');
+  el.srcVideo.addEventListener('pause', () => el.btnPlay.textContent = '▶ Play');
   el.srcVideo.addEventListener('play', startTransportMonitor);
   el.srcVideo.addEventListener('pause', stopTransportMonitor);
   el.srcVideo.addEventListener('ended', stopTransportMonitor);
@@ -260,9 +260,9 @@ function wireTransport() {
   el.btnStopOut.onclick = toggleOutputPause;
 }
 
-function playRange(a, b) {
+function playRange(a, b, mode = 'cut') {
   stopSequence();
-  store.ui.playRange = { start: a, end: b };
+  store.ui.playRange = { start: a, end: b, mode };
   renderSeekDecor();
   updatePlayInfo();
   seekTo(a, () => el.srcVideo.play());
@@ -462,7 +462,7 @@ function stopSequence() {
 
 function updateOutputTransport() {
   el.btnStopOut.disabled = !sequence;
-  el.btnStopOut.textContent = sequence && el.srcVideo.paused ? 'Resume' : 'Pause';
+  el.btnStopOut.textContent = sequence && el.srcVideo.paused ? '▶ Resume' : '⏸ Pause';
 }
 
 function sequenceClock() {
@@ -479,24 +479,38 @@ function updatePlayInfo() {
   if (!el.playInfo) return;
   if (sequence) {
     const clock = sequenceClock();
-    el.playInfo.dataset.mode = 'edit';
-    el.playInfo.textContent = `${el.srcVideo.paused ? 'Edit paused' : 'Edit playing'} ${fmtTime(clock.at)} / ${fmtTime(clock.total)}`;
+    setPreviewState('edit', `${el.srcVideo.paused ? 'Edit paused' : 'Edit playing'} ${fmtTime(clock.at)} / ${fmtTime(clock.total)}`);
     return;
   }
   const r = store.ui.playRange;
   if (r) {
     const at = Math.max(0, Math.min(Math.max(0, r.end - r.start), (el.srcVideo.currentTime || r.start) - r.start));
-    el.playInfo.dataset.mode = 'cut';
-    el.playInfo.textContent = `${el.srcVideo.paused ? 'Cut paused' : 'Cut range'} ${fmtTime(at)} / ${fmtTime(Math.max(0, r.end - r.start))}`;
+    const mode = r.mode === 'stock' ? 'stock' : 'cut';
+    const label = mode === 'stock' ? 'Stock cut' : 'Cut range';
+    setPreviewState(mode, `${el.srcVideo.paused ? label + ' paused' : label} ${fmtTime(at)} / ${fmtTime(Math.max(0, r.end - r.start))}`);
     return;
   }
   if (!el.srcVideo.paused && el.srcVideo.currentTime > 0) {
-    el.playInfo.dataset.mode = activeArea === 'edit' ? 'edit' : 'source';
-    el.playInfo.textContent = `${activeArea === 'edit' ? 'Edit preview' : 'Source playing'} ${fmtTime(el.srcVideo.currentTime)}`;
+    const mode = activeArea === 'edit' ? 'edit' : 'source';
+    setPreviewState(mode, `${activeArea === 'edit' ? 'Edit preview' : 'Source playing'} ${fmtTime(el.srcVideo.currentTime)}`);
     return;
   }
-  el.playInfo.dataset.mode = activeArea === 'edit' ? 'edit' : 'idle';
-  el.playInfo.textContent = activeArea === 'edit' ? 'Edit ready' : 'Source ready';
+  const editingCut = activeArea === 'timeline' || !!store.ui.editMaterialId || !!store.ui.editMaterialIds?.length;
+  if (activeArea === 'edit') {
+    setPreviewState('edit', 'Edit ready');
+  } else if (editingCut) {
+    setPreviewState('source', 'Cut / Split ready');
+  } else {
+    setPreviewState('idle', 'Source ready');
+  }
+}
+
+function setPreviewState(mode, text) {
+  el.playInfo.dataset.mode = mode;
+  el.playInfo.textContent = text;
+  for (const pane of [el.origPane, el.vertPane]) {
+    if (pane) pane.dataset.previewMode = mode;
+  }
 }
 
 function ensureSource(sourceId, cb) {
@@ -739,7 +753,20 @@ function wireWorkspaceSplitters() {
 }
 
 // ---------- shortcuts ----------
+function isTextEntryTarget(target) {
+  if (!target) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (tag !== 'INPUT') return false;
+  const type = (target.type || 'text').toLowerCase();
+  return ['text', 'search', 'url', 'tel', 'email', 'password', 'number'].includes(type);
+}
+
 function wireShortcuts() {
+  document.addEventListener('selectstart', (e) => {
+    if (!isTextEntryTarget(e.target)) e.preventDefault();
+  });
   window.addEventListener('keydown', (e) => {
     if (!el.exportMode.hidden) {
       if (e.key === 'Escape') { e.preventDefault(); closeExportMode(null); }
@@ -751,7 +778,8 @@ function wireShortcuts() {
       else if (e.key === 'Escape') { e.preventDefault(); closeConfirm(false); }
       return;
     }
-    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || e.target.isContentEditable) return;
+    if (isTextEntryTarget(e.target)) return;
+    window.getSelection()?.removeAllRanges();
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); store.undo(); }
     else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); store.redo(); }
