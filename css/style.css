@@ -514,6 +514,17 @@ body {
   box-shadow: 0 0 0 1px rgba(0,0,0,.55);
   z-index: 6;
 }
+.out-list.caption-focused .caption-bar:not(.caption-selected) {
+  opacity: .46;
+}
+.out-list.caption-focused .caption-bar:not(.caption-selected) .caption-anchor-stem,
+.out-list.caption-focused .caption-bar:not(.caption-selected) .caption-anchor-dot {
+  opacity: .55;
+}
+.out-list.caption-focused .caption-bar.caption-selected {
+  opacity: 1;
+  z-index: 7;
+}
 .caption-edit-panel {
   position: absolute;
   inset: 0;

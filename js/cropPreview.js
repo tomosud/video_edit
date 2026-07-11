@@ -1,6 +1,6 @@
 // cropPreview.js - 9:16 canvas preview of the active source with crop/pan/zoom
 import { store } from './store.js?v=20260707-horizontal-crop';
-import { activeCaptionText as captionTextForSequence, drawCaption } from './captions.js?v=20260711-bilingual-captions';
+import { activeCaptionText as captionTextForSequence, drawCaption } from './captions.js?v=20260711-caption-edit-preview';
 
 let canvas, ctx, video;
 let raf = 0;
@@ -47,7 +47,7 @@ function resize() {
 
 // crop config: selected output's crop if any, else the UI draft crop
 function currentCrop() {
-  const r = store.resolve();
+  const r = store.resolve() || resolveSelectedCaption();
   return (r && r.crop) || store.ui.crop || { panX: 0.5, panY: 0.5, zoom: 1, bgBlur: 1 };
 }
 
@@ -75,21 +75,32 @@ function drawActiveCaption(ctx, W, H) {
 }
 
 function currentCaptionText() {
-  const sel = store.ui.selection;
-  if (sel.kind !== 'output') return '';
+  const selected = selectedOutputForCaption() || store.ui.selection.id;
+  if (!selected) return '';
   const p = store.get();
   let sequenceMs = 0;
   for (const output of p.outputs) {
     const material = p.materials.find(m => m.id === output.materialId);
     if (!material) continue;
     const durationMs = Math.max(250, Math.round(Math.max(0, material.out - material.in) * 1000));
-    if (output.id === sel.id) {
+    if (output.id === selected) {
       const localMs = Math.round(Math.max(0, ((video?.currentTime || material.in) - material.in) * 1000));
       return captionTextForSequence(p, sequenceMs + localMs);
     }
     sequenceMs += durationMs;
   }
   return '';
+}
+
+function selectedOutputForCaption() {
+  const id = store.ui.selectedCaptionId;
+  if (!id) return null;
+  return store.get().outputs.find(output => (output.captions || []).some(c => c.id === id))?.id || null;
+}
+
+function resolveSelectedCaption() {
+  const outputId = selectedOutputForCaption();
+  return outputId ? store.resolve({ kind: 'output', id: outputId }) : null;
 }
 
 function sourceSize(source) {

@@ -2,10 +2,11 @@
 import { store, uid } from './store.js?v=20260707-horizontal-crop';
 import { cardThumb, cloneCanvas } from './thumbnails.js?v=20260707-horizontal-crop';
 import { fmtDur } from './util.js?v=20260707-horizontal-crop';
-import { MIN_CAPTION_MS, captionAbsolute, captionDensity, densityClass } from './captions.js?v=20260711-bilingual-captions';
+import { MIN_CAPTION_MS, captionAbsolute, captionDensity, captionLines, densityClass } from './captions.js?v=20260711-caption-edit-seek';
 
 const MIN_SPAN_SEC = 1;
 const MIN_CLIP_PX = 28;
+const OUTSIDE_CAPTION_PAD_MS = 500;
 
 let listEl, totalEl, captionEditorEl, video;
 let onPlay = () => {};
@@ -58,7 +59,7 @@ export function init(elements, hooks = {}) {
 function render() {
   const layout = sequenceLayout();
   totalEl.textContent = 'Total ' + fmtDur(layout.totalMs / 1000);
-  normalizeView(layout.totalMs / 1000);
+  normalizeView(layout);
   const active = document.activeElement;
   if ((active?.classList?.contains('caption-edit-textarea') && listEl.contains(active)) || editingCaptionId) return;
 
@@ -68,6 +69,7 @@ function render() {
     return;
   }
 
+  listEl.classList.toggle('caption-focused', !!store.ui.selectedCaptionId);
   listEl.innerHTML = '';
   const timeline = document.createElement('div');
   timeline.className = 'edit-timeline';
@@ -105,6 +107,8 @@ function render() {
 function sequenceLayout(project = store.get()) {
   const items = [];
   let startMs = 0;
+  let minMs = 0;
+  let maxMs = 0;
   for (let index = 0; index < project.outputs.length; index++) {
     const output = project.outputs[index];
     const material = project.materials.find(m => m.id === output.materialId);
@@ -114,9 +118,23 @@ function sequenceLayout(project = store.get()) {
     const item = { output, material, source, index, startMs, endMs: startMs + durationMs, durationMs };
     clampCaptionAnchors(item);
     items.push(item);
+    minMs = Math.min(minMs, item.startMs);
+    maxMs = Math.max(maxMs, item.endMs);
+    for (const caption of captionsOf(output)) {
+      const abs = captionAbsolute(caption, item.startMs, material);
+      if (!abs) continue;
+      minMs = Math.min(minMs, abs.startMs);
+      maxMs = Math.max(maxMs, abs.endMs);
+    }
     startMs += durationMs;
   }
-  return { items, totalMs: startMs };
+  const hasOutsideCaption = minMs < 0 || maxMs > startMs;
+  return {
+    items,
+    totalMs: startMs,
+    minMs: hasOutsideCaption ? minMs - OUTSIDE_CAPTION_PAD_MS : 0,
+    maxMs: hasOutsideCaption ? maxMs + OUTSIDE_CAPTION_PAD_MS : startMs,
+  };
 }
 
 function captionsOf(output) {
@@ -154,22 +172,28 @@ function xToMs(clientX) {
   return Math.round((viewStart + ((clientX - rect.left) / (rect.width || 1)) * spanSec()) * 1000);
 }
 function clampMs(ms, layout = sequenceLayout()) { return Math.max(0, Math.min(layout.totalMs, Math.round(ms))); }
+function clampViewMs(ms, layout = sequenceLayout()) {
+  return Math.max(layout.minMs, Math.min(layout.maxMs, Math.round(ms)));
+}
 function sourceMs(sec) { return Math.round(Math.max(0, +(sec || 0)) * 1000); }
 function sourceAnchorFromSequenceMs(item, sequenceMs) {
   const localMs = Math.max(0, Math.min(item.durationMs, Math.round(sequenceMs - item.startMs)));
   return Math.max(sourceMs(item.material.in), Math.min(sourceMs(item.material.out), sourceMs(item.material.in) + localMs));
 }
 
-function normalizeView(totalSec) {
-  const total = Math.max(0, totalSec || 0);
+function normalizeView(layout) {
+  const total = Math.max(0, layout.totalMs / 1000 || 0);
   if (!total) { viewStart = 0; viewEnd = 1; return; }
-  if (viewEnd <= viewStart || viewStart < 0 || viewEnd > total + 0.001) {
-    viewStart = 0;
-    viewEnd = Math.min(total, Math.max(MIN_SPAN_SEC, Math.min(12, total)));
+  const min = layout.minMs / 1000;
+  const max = Math.max(min + MIN_SPAN_SEC, layout.maxMs / 1000);
+  const boundsSpan = Math.max(MIN_SPAN_SEC, max - min);
+  if (viewEnd <= viewStart || viewStart < min - 0.001 || viewEnd > max + 0.001) {
+    viewStart = min;
+    viewEnd = Math.min(max, viewStart + Math.max(MIN_SPAN_SEC, Math.min(12, boundsSpan)));
   }
-  const span = Math.min(total, Math.max(MIN_SPAN_SEC, spanSec()));
-  viewStart = Math.max(0, Math.min(viewStart, total - span));
-  viewEnd = Math.min(total, viewStart + span);
+  const span = Math.min(boundsSpan, Math.max(MIN_SPAN_SEC, spanSec()));
+  viewStart = Math.max(min, Math.min(viewStart, max - span));
+  viewEnd = Math.min(max, viewStart + span);
 }
 
 function card(item) {
@@ -241,17 +265,19 @@ function onWheel(e) {
   const layout = sequenceLayout();
   if (!layout.totalMs) return;
   e.preventDefault();
-  const total = layout.totalMs / 1000;
-  const center = Math.max(0, Math.min(total, xToMs(e.clientX) / 1000));
+  const min = layout.minMs / 1000;
+  const max = Math.max(min + MIN_SPAN_SEC, layout.maxMs / 1000);
+  const boundsSpan = Math.max(MIN_SPAN_SEC, max - min);
+  const center = Math.max(min, Math.min(max, xToMs(e.clientX) / 1000));
   const oldSpan = spanSec();
   const factor = Math.exp(e.deltaY * 0.0015);
-  const newSpan = Math.min(total, Math.max(MIN_SPAN_SEC, oldSpan * factor));
+  const newSpan = Math.min(boundsSpan, Math.max(MIN_SPAN_SEC, oldSpan * factor));
   let start = center - (center - viewStart) * (newSpan / oldSpan);
   let end = start + newSpan;
-  if (start < 0) { start = 0; end = newSpan; }
-  if (end > total) { end = total; start = end - newSpan; }
-  viewStart = Math.max(0, start);
-  viewEnd = Math.min(total, end);
+  if (start < min) { start = min; end = start + newSpan; }
+  if (end > max) { end = max; start = end - newSpan; }
+  viewStart = Math.max(min, start);
+  viewEnd = Math.min(max, end);
   render();
 }
 
@@ -268,7 +294,11 @@ function onTimelinePointerDown(e) {
   const playhead = e.target.closest('.edit-playhead');
   const seekLane = e.target.closest('.edit-seek-lane');
   const captionTrack = e.target.closest('.edit-caption-track');
-  if (captionTrack && !e.target.closest('.caption-bar')) return;
+  if (captionTrack && !e.target.closest('.caption-bar')) {
+    e.preventDefault();
+    clearCaptionSelection();
+    return;
+  }
   if (playhead || seekLane) {
     e.preventDefault();
     playheadDrag = true;
@@ -342,6 +372,8 @@ function mountCaptionTextEdit(captionId) {
   panel.className = 'caption-edit-panel';
   const primary = captionEditTextarea(found.caption.text || '', 'Primary');
   const secondary = captionEditTextarea(found.caption.secondaryText || '', 'Second');
+  primary.dataset.captionField = 'text';
+  secondary.dataset.captionField = 'secondaryText';
   const sync = () => {
     store.updateLive((p, ui) => {
       const cur = findCaption(p, captionId);
@@ -353,9 +385,17 @@ function mountCaptionTextEdit(captionId) {
   };
   for (const textarea of [primary, secondary]) {
     textarea.addEventListener('pointerdown', (e) => e.stopPropagation());
-    textarea.addEventListener('click', (e) => e.stopPropagation());
+    textarea.addEventListener('click', (e) => {
+      e.stopPropagation();
+      seekTextEditLine(captionId, textarea);
+    });
     textarea.addEventListener('dblclick', (e) => e.stopPropagation());
-    textarea.addEventListener('input', sync);
+    textarea.addEventListener('focus', () => seekTextEditLine(captionId, textarea));
+    textarea.addEventListener('input', () => {
+      sync();
+      seekTextEditLine(captionId, textarea);
+    });
+    textarea.addEventListener('keyup', () => seekTextEditLine(captionId, textarea));
     textarea.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') textarea.blur();
       if (e.key === 'Escape') {
@@ -387,6 +427,17 @@ function captionEditTextarea(value, label) {
   textarea.placeholder = label;
   textarea.rows = 2;
   return textarea;
+}
+
+function seekTextEditLine(captionId, textarea) {
+  const found = findCaption(store.get(), captionId);
+  if (!found) return;
+  const layout = sequenceLayout();
+  const item = layout.items.find(it => it.output.id === found.output.id);
+  if (!item) return;
+  const lineIndex = Math.max(0, textarea.value.slice(0, textarea.selectionStart || 0).split(/\r?\n/).length - 1);
+  const ms = captionLineStartMs(found.caption, textarea.dataset.captionField || 'text', lineIndex, item);
+  seekTimelineMs(ms, true);
 }
 
 function wireCaptionPointer(bar, captionId) {
@@ -424,6 +475,8 @@ function wireCaptionPointer(bar, captionId) {
       startOffsetMs: found.caption.startOffsetMs,
       endOffsetMs: found.caption.endOffsetMs,
     };
+    if (edge) seekTimelineMs(edge === 'start' ? abs.startMs : abs.endMs, true);
+    else seekTimelineMs(abs.startMs, true);
   });
   bar.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -446,19 +499,23 @@ function onPointerMove(e) {
   if (gesture.type === 'pan') {
     const dx = e.clientX - gesture.startX;
     const dt = dx / innerW() * (gesture.startViewEnd - gesture.startViewStart);
-    const total = layout.totalMs / 1000;
+    const min = layout.minMs / 1000;
+    const max = Math.max(min + MIN_SPAN_SEC, layout.maxMs / 1000);
     const span = gesture.startViewEnd - gesture.startViewStart;
-    viewStart = Math.max(0, Math.min(total - span, gesture.startViewStart - dt));
+    viewStart = Math.max(min, Math.min(max - span, gesture.startViewStart - dt));
     viewEnd = viewStart + span;
     render();
     return;
   }
   if (gesture.type === 'caption-move') {
     const deltaMs = xToMs(e.clientX) - xToMs(gesture.startClientX);
-    store.updateLive((p, ui) => moveCaptionAbsolute(p, ui, gesture.captionId, gesture.startAnchorMs + deltaMs, gesture.startOffsetMs, gesture.endOffsetMs));
+    const targetAnchorMs = clampMs(gesture.startAnchorMs + deltaMs, layout);
+    store.updateLive((p, ui) => moveCaptionAbsolute(p, ui, gesture.captionId, targetAnchorMs, gesture.startOffsetMs, gesture.endOffsetMs));
+    seekTimelineMs(targetAnchorMs + gesture.startOffsetMs, true);
   } else if (gesture.type === 'caption-resize') {
-    const targetMs = clampMs(xToMs(e.clientX), layout);
+    const targetMs = clampViewMs(xToMs(e.clientX), layout);
     store.updateLive((p) => resizeCaptionAbsolute(p, gesture.captionId, gesture.edge, targetMs));
+    seekTimelineMs(gesture.edge === 'start' ? Math.min(targetMs, gesture.startAnchorMs - 1) : Math.max(targetMs, gesture.startAnchorMs + MIN_CAPTION_MS), true);
   }
 }
 
@@ -475,8 +532,15 @@ function onPointerUp(e) {
 function seekFromClientX(clientX, previewOnly) {
   const layout = sequenceLayout();
   const ms = clampMs(xToMs(clientX), layout);
-  onSeek(ms / 1000, { previewOnly });
-  positionPlayhead(ms);
+  seekTimelineMs(ms, previewOnly);
+}
+
+function seekTimelineMs(ms, previewOnly = true) {
+  const layout = sequenceLayout();
+  const timelineMs = clampViewMs(ms, layout);
+  const playbackMs = clampMs(ms, layout);
+  onSeek(playbackMs / 1000, { previewOnly });
+  positionPlayhead(timelineMs);
 }
 
 function positionPlayhead(forcedMs = null) {
@@ -496,6 +560,21 @@ function currentSequenceMs() {
   if (!item || !video) return item?.startMs || 0;
   const localMs = Math.max(0, Math.round(((video.currentTime || item.material.in) - item.material.in) * 1000));
   return Math.max(0, Math.min(layout.totalMs, item.startMs + localMs));
+}
+
+function captionLineStartMs(caption, field, lineIndex, item) {
+  const abs = captionAbsolute(caption, item.startMs, item.material);
+  if (!abs) return item.startMs;
+  const lines = captionLines(caption[field] || '');
+  if (lines.length <= 1) return abs.startMs;
+  const index = Math.max(0, Math.min(lines.length - 1, lineIndex));
+  const duration = Math.max(MIN_CAPTION_MS, abs.endMs - abs.startMs);
+  const gapTotal = 200 * (lines.length - 1);
+  if (duration >= gapTotal + 400 * lines.length) {
+    const visibleMs = (duration - gapTotal) / lines.length;
+    return Math.round(abs.startMs + index * (visibleMs + 200));
+  }
+  return Math.round(abs.startMs + index * (duration / lines.length));
 }
 
 function startPlayheadLoop() { if (!playRaf) playheadLoop(); }
@@ -527,6 +606,13 @@ function selectOutput(outputId) {
 
 function selectCaption(captionId) {
   store.setUI({ selectedCaptionId: captionId, selection: { kind: null, id: null } });
+}
+
+function clearCaptionSelection() {
+  editingCaptionId = null;
+  const active = document.activeElement;
+  if (active?.classList?.contains('caption-edit-textarea')) active.blur();
+  store.setUI({ selectedCaptionId: null, selection: { kind: null, id: null } });
 }
 
 function resizeCaptionAbsolute(project, captionId, edge, targetMs) {

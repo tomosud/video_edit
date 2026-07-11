@@ -2,12 +2,12 @@
 import { store } from './store.js?v=20260707-horizontal-crop';
 import * as fileOpen from './fileOpen.js?v=20260707-horizontal-crop';
 import * as db from './db.js?v=20260707-horizontal-crop';
-import * as cropPreview from './cropPreview.js?v=20260711-bilingual-captions';
-import * as horizontalPreview from './horizontalPreview.js?v=20260711-bilingual-captions';
+import * as cropPreview from './cropPreview.js?v=20260711-caption-edit-preview';
+import * as horizontalPreview from './horizontalPreview.js?v=20260711-caption-edit-preview';
 import * as srcTimeline from './sourceTimeline.js?v=20260707-horizontal-crop';
 import * as frameStrip from './frameStrip.js?v=20260707-horizontal-crop';
 import * as shelf from './materialShelf.js?v=20260707-horizontal-crop';
-import * as outSeq from './outputSequenceTimeline.js?v=20260711-bilingual-captions';
+import * as outSeq from './outputSequenceTimeline.js?v=20260711-caption-edit-seek';
 import { exportProject, downloadBlob } from './export.js?v=20260711-bilingual-captions';
 import { fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js?v=20260707-horizontal-crop';
 
@@ -300,7 +300,7 @@ function seekOutputTime(sequenceSeconds, { previewOnly = false } = {}) {
   updateOutputTransport();
   const it = items[index];
   store.ui._fromSequence = true;
-  store.select('output', it.outputId);
+  if (!(previewOnly && store.ui.selectedCaptionId)) store.select('output', it.outputId);
   ensureSource(it.sourceId, () => {
     seekTo(it.in + local, () => {
       sequenceAdvancing = false;
