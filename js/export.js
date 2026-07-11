@@ -7,6 +7,7 @@ import {
   ALL_FORMATS,
   BlobSource,
   BufferTarget,
+  AudioSample,
   AudioSampleSink,
   AudioSampleSource,
   CanvasSink,
@@ -93,6 +94,73 @@ async function getFrameCanvas(session, sourceFps, sourceFrame) {
   return wrapped.canvas;
 }
 
+// Fixed export audio format. Mediabunny's AudioSampleSource requires every
+// input sample to share one sampleRate/channel layout for the whole track,
+// while clips can freely mix mono/stereo and 44.1k/48k sources - so every
+// sample (and silence for audio-less clips) is converted to this format
+// before it is added.
+const EXPORT_AUDIO_RATE = 44_100;
+const EXPORT_AUDIO_CHANNELS = 2;
+
+function resampleLinear(src, outFrames) {
+  const out = new Float32Array(outFrames);
+  const step = src.length / outFrames;
+  for (let i = 0; i < outFrames; i++) {
+    const pos = i * step;
+    const i0 = Math.min(src.length - 1, Math.floor(pos));
+    const i1 = Math.min(src.length - 1, i0 + 1);
+    const t = pos - i0;
+    out[i] = src[i0] * (1 - t) + src[i1] * t;
+  }
+  return out;
+}
+
+function toUniformAudioSample(sample, timestamp) {
+  const frames = sample.numberOfFrames;
+  const channels = Math.max(1, sample.numberOfChannels);
+  const planes = [];
+  for (let c = 0; c < Math.min(channels, EXPORT_AUDIO_CHANNELS); c++) {
+    const buf = new Float32Array(frames);
+    sample.copyTo(buf, { planeIndex: c, format: 'f32-planar' });
+    planes.push(buf);
+  }
+  let left = planes[0];
+  let right = planes[1] || planes[0]; // mono -> duplicate, >2ch -> first two
+  if (sample.sampleRate !== EXPORT_AUDIO_RATE) {
+    const outFrames = Math.max(1, Math.round(frames * EXPORT_AUDIO_RATE / sample.sampleRate));
+    left = resampleLinear(left, outFrames);
+    right = planes[1] ? resampleLinear(planes[1], outFrames) : left;
+  }
+  const data = new Float32Array(left.length * EXPORT_AUDIO_CHANNELS);
+  data.set(left, 0);
+  data.set(right, left.length);
+  return new AudioSample({
+    data,
+    format: 'f32-planar',
+    numberOfChannels: EXPORT_AUDIO_CHANNELS,
+    sampleRate: EXPORT_AUDIO_RATE,
+    timestamp,
+  });
+}
+
+// Keep the audio track continuous and uniform for clips without decodable audio.
+async function addSilentClip(audioSource, durationSec, outputStartTime) {
+  const totalFrames = Math.round(Math.max(0, durationSec) * EXPORT_AUDIO_RATE);
+  const chunkFrames = EXPORT_AUDIO_RATE; // 1-second chunks
+  for (let offset = 0; offset < totalFrames; offset += chunkFrames) {
+    const frames = Math.min(chunkFrames, totalFrames - offset);
+    const sample = new AudioSample({
+      data: new Float32Array(frames * EXPORT_AUDIO_CHANNELS),
+      format: 'f32-planar',
+      numberOfChannels: EXPORT_AUDIO_CHANNELS,
+      sampleRate: EXPORT_AUDIO_RATE,
+      timestamp: outputStartTime + offset / EXPORT_AUDIO_RATE,
+    });
+    await audioSource.add(sample);
+    sample.close();
+  }
+}
+
 async function addAudioClip(audioSource, session, bounds, outputStartTime) {
   if (!session?.audioSink) return;
   for await (let sample of session.audioSink.samples(bounds.inTime, bounds.outTime)) {
@@ -115,9 +183,11 @@ async function addAudioClip(audioSource, session, bounds, outputStartTime) {
       sample.close();
       continue;
     }
-    sample.setTimestamp(outputStartTime + Math.max(0, sample.timestamp - bounds.inTime));
-    await audioSource.add(sample);
+    const timestamp = outputStartTime + Math.max(0, sample.timestamp - bounds.inTime);
+    const uniform = toUniformAudioSample(sample, timestamp);
     sample.close();
+    await audioSource.add(uniform);
+    uniform.close();
   }
 }
 
@@ -148,8 +218,8 @@ export async function exportProject({ width, height, fps: requestedFps, cropMode
   const codec = await chooseCodec(outW, outH, bitrate);
   const sourceIds = [...new Set(items.map(it => it.sourceId))];
   const wantsAudio = sourceIds.some(id => sourceById(project, id)?.hasAudio);
-  const audioSampleRate = 48_000;
-  const audioChannels = 2;
+  const audioSampleRate = EXPORT_AUDIO_RATE;
+  const audioChannels = EXPORT_AUDIO_CHANNELS;
   const audioBitrate = 160_000;
   const audioCodec = wantsAudio ? await chooseAudioCodec(audioSampleRate, audioChannels, audioBitrate) : null;
   if (wantsAudio && !audioCodec) {
@@ -173,14 +243,11 @@ export async function exportProject({ width, height, fps: requestedFps, cropMode
     hardwareAcceleration: 'prefer-hardware',
   });
   output.addVideoTrack(canvasSource, { frameRate: fps });
+  // No mediabunny transform here: samples are already converted to the fixed
+  // export format above (the transform cannot fix mixed-format inputs anyway).
   const audioSource = audioCodec ? new AudioSampleSource({
     codec: audioCodec,
     bitrate: audioBitrate,
-    transform: {
-      sampleRate: audioSampleRate,
-      numberOfChannels: audioChannels,
-      sampleFormat: 'f32',
-    },
   }) : null;
   if (audioSource) output.addAudioTrack(audioSource);
   await output.start();
@@ -203,7 +270,10 @@ export async function exportProject({ width, height, fps: requestedFps, cropMode
       const src = sourceById(project, it.sourceId);
       const session = sessions.get(it.sourceId);
       onStatus?.(`Encoding clip ${i + 1}/${bounds.length}...`);
-      if (audioSource) await addAudioClip(audioSource, session, it.bounds, outTime);
+      if (audioSource) {
+        if (session?.audioSink) await addAudioClip(audioSource, session, it.bounds, outTime);
+        else await addSilentClip(audioSource, it.bounds.frameCount / fps, outTime);
+      }
 
       for (let localFrame = 0; localFrame < it.bounds.frameCount; localFrame++) {
         const sourceFrame = clamp(

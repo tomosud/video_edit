@@ -3,6 +3,7 @@ export {
   ALL_FORMATS,
   BlobSource,
   BufferTarget,
+  AudioSample,
   AudioSampleSink,
   AudioSampleSource,
   CanvasSink,

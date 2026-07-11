@@ -602,8 +602,20 @@ function seekTimelineMs(ms, previewOnly = true) {
   positionPlayhead(timelineMs);
 }
 
+// Last position a gesture forced the playhead to. Caption drags re-render the
+// timeline on rAF and the video fires async 'seeked' events; both call
+// positionPlayhead() with no argument, which must not undo the gesture's
+// placement while the drag is still active.
+let lastForcedPlayheadMs = null;
+
+function gestureDragActive() {
+  return playheadDrag || gesture?.type === 'caption-move' || gesture?.type === 'caption-resize';
+}
+
 function positionPlayhead(forcedMs = null) {
-  const ms = forcedMs ?? currentSequenceMs();
+  if (forcedMs != null) lastForcedPlayheadMs = forcedMs;
+  const ms = forcedMs
+    ?? (gestureDragActive() && lastForcedPlayheadMs != null ? lastForcedPlayheadMs : currentSequenceMs());
   const head = listEl?.querySelector('.edit-playhead');
   if (!head) return;
   const x = timeToX(ms);
@@ -612,10 +624,16 @@ function positionPlayhead(forcedMs = null) {
 }
 
 function currentSequenceMs() {
+  // A selected caption also anchors the playhead to its cut: selecting a
+  // caption clears ui.selection, so resolve the owning output explicitly.
   const sel = store.ui.selection;
-  if (sel.kind !== 'output') return 0;
+  let outputId = sel.kind === 'output' ? sel.id : null;
+  if (!outputId && store.ui.selectedCaptionId) {
+    outputId = findCaption(store.get(), store.ui.selectedCaptionId)?.output.id || null;
+  }
+  if (!outputId) return 0;
   const layout = sequenceLayout();
-  const item = layout.items.find(it => it.output.id === sel.id);
+  const item = layout.items.find(it => it.output.id === outputId);
   if (!item || !video) return item?.startMs || 0;
   const localMs = Math.max(0, Math.round(((video.currentTime || item.material.in) - item.material.in) * 1000));
   return Math.max(0, Math.min(layout.totalMs, item.startMs + localMs));

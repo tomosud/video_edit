@@ -1009,23 +1009,9 @@ function closeExportMode(value) {
 function resolveExportFps(sources, fallback) {
   const values = sources.map(s => Number(s.fps || 0)).filter(v => Number.isFinite(v) && v > 0);
   if (!values.length) return fallback || 30;
-  const unique = [];
-  for (const fps of values) {
-    if (!unique.some(v => Math.abs(v - fps) < 0.01)) unique.push(fps);
-  }
-  if (unique.length === 1) return unique[0];
-
-  const picked = prompt(
-    ['Source frame rates do not match.', 'Enter the FPS to use.', 'Candidates: ' + unique.map(v => Number(v.toFixed(3))).join(', ')].join('\n'),
-    String(fallback || unique[0]),
-  );
-  if (picked == null) return null;
-  const fps = Number(picked);
-  if (!Number.isFinite(fps) || fps <= 0) {
-    alert('FPS must be a positive number');
-    return null;
-  }
-  return fps;
+  // Mixed frame rates: use the highest so no source has to drop frames,
+  // capped at 60 fps.
+  return Math.min(60, Math.max(...values));
 }
 
 function exportTargets(mode, baseName, sources) {

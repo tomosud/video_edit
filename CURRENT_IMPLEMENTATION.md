@@ -261,6 +261,9 @@ UI state:
 - horizontal export は horizontal crop を使う。
 - 字幕は export frame に描画される。
 - second language も黄色字幕として描画。
+- fps: ソース間で不一致なら最大値に合わせる。上限 60fps。ダイアログでは聞かない。
+- 音声: 全サンプルを 44100Hz / 2ch / f32 に変換してから encoder に渡す(mono は複製、48kHz などは線形リサンプル)。
+- 音声なし(またはデコード不可)のソースは同フォーマットの無音で埋め、トラックのパラメータを一定に保つ。
 
 ## 主要ファイル
 
