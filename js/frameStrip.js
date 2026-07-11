@@ -1,7 +1,7 @@
 // frameStrip.js - fixed per-frame strip around the current preview frame
-import { store, uid } from './store.js?v=20260711-sessions';
-import { frameCanvas } from './thumbnails.js?v=20260711-sessions';
-import { frameFromTime, frameStartTime, seekVideoFrame } from './util.js?v=20260707-horizontal-crop';
+import { store, uid } from './store.js';
+import { frameCanvas } from './thumbnails.js';
+import { frameFromTime, frameStartTime, seekVideoFrame } from './util.js';
 
 const RADIUS = 10;
 const SLOT_COUNT = RADIUS * 2 + 1;

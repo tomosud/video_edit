@@ -1,16 +1,17 @@
 // app.js - entry: wire modules, selection side-effects, ranged playback, temporary export
-import { store } from './store.js?v=20260711-sessions';
-import * as fileOpen from './fileOpen.js?v=20260711-sessions';
-import * as db from './db.js?v=20260711-sessions';
-import * as cropPreview from './cropPreview.js?v=20260711-sessions';
-import * as horizontalPreview from './horizontalPreview.js?v=20260711-sessions';
-import * as srcTimeline from './sourceTimeline.js?v=20260711-overview';
-import * as frameStrip from './frameStrip.js?v=20260711-sessions';
-import * as shelf from './materialShelf.js?v=20260711-sessions';
-import * as outSeq from './outputSequenceTimeline.js?v=20260711-sessions';
-import { cardThumb, cloneCanvas } from './thumbnails.js?v=20260711-sessions';
-import { exportProject, downloadBlob } from './export.js?v=20260711-sessions';
-import { fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js?v=20260707-horizontal-crop';
+import { store } from './store.js';
+import * as fileOpen from './fileOpen.js';
+import * as db from './db.js';
+import * as cropPreview from './cropPreview.js';
+import * as horizontalPreview from './horizontalPreview.js';
+import * as srcTimeline from './sourceTimeline.js';
+import * as frameStrip from './frameStrip.js';
+import * as shelf from './materialShelf.js';
+import * as outSeq from './outputSequenceTimeline.js';
+import { cardThumb, cloneCanvas } from './thumbnails.js';
+import { disposeMediaSessions } from './mediaSession.js';
+import { exportProject, downloadBlob } from './export.js';
+import { escapeAttr, escapeHtml, fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js';
 
 const $ = (id) => document.getElementById(id);
 const el = {};
@@ -40,6 +41,12 @@ const sourceThumbs = new Map();
 const sourceThumbBusy = new Set();
 
 function init() {
+  // The COOP/COEP service worker was removed (nothing here needs
+  // SharedArrayBuffer); unregister any worker left from older versions.
+  navigator.serviceWorker?.getRegistrations?.()
+    .then(rs => rs.forEach(r => r.unregister()))
+    .catch(() => { /* ignore */ });
+
   cropPreview.init(el.vertCanvas, el.srcVideo);
   horizontalPreview.init(el.horizCanvas, el.srcVideo);
   srcTimeline.init({
@@ -52,6 +59,9 @@ function init() {
   outSeq.init({ list: el.outList, captionEditor: el.captionEditor, total: el.totalDur, video: el.srcVideo }, { play: playOutputFrom, seek: seekOutputTime });
   srcTimeline.onPlayRange(playRange);
   store.setSessionMetaProvider(sessionMeta);
+  // Autosave failures (quota, blocked storage) must be visible: the user
+  // otherwise closes the tab believing the session can be restored.
+  store.setPersistErrorHandler((err) => setStatus('Autosave failed: ' + (err?.message || err)));
 
   wireMenu(); wireSourcePicker(); wireTransport(); wireCrop(); wireShortcuts(); wireSeek(); wireConfirm(); wireAreas(); wireWorkspaceSplitters(); wireVideoDrop();
   store.subscribe(onState);
@@ -60,25 +70,32 @@ function init() {
 }
 
 async function bootstrap() {
-  const requested = urlSessionId();
-  let restored = false;
-  if (requested) {
-    store.setSessionId(requested);
-    restored = await store.restore(requested);
-  } else {
-    const latest = await db.latestSession().catch(() => null);
-    const sessionId = latest?.id || makeSessionId();
-    setUrlSession(sessionId);
-    store.setSessionId(sessionId);
-    restored = latest ? await store.restore(sessionId) : await store.restoreLegacyAutosave();
-  }
+  // Never let a storage failure (blocked IndexedDB, corrupt session, ...)
+  // leave the app dead on load; fall back to an empty in-memory edit.
+  try {
+    const requested = urlSessionId();
+    let restored = false;
+    if (requested) {
+      store.setSessionId(requested);
+      restored = await store.restore(requested);
+    } else {
+      const latest = await db.latestSession().catch(() => null);
+      const sessionId = latest?.id || makeSessionId();
+      setUrlSession(sessionId);
+      store.setSessionId(sessionId);
+      restored = latest ? await store.restore(sessionId) : await store.restoreLegacyAutosave();
+    }
 
-  if (restored) {
-    const mediaRestored = await fileOpen.restoreSavedMedia();
-    refreshStateViews();
-    setStatus(mediaRestored.length ? 'Restored edit' : 'Restored edit; video files are missing');
-  } else {
-    await resetTemporaryEdit('Temporary edit ready');
+    if (restored) {
+      const mediaRestored = await fileOpen.restoreSavedMedia();
+      refreshStateViews();
+      setStatus(mediaRestored.length ? 'Restored edit' : 'Restored edit; video files are missing');
+    } else {
+      await resetTemporaryEdit('Temporary edit ready');
+    }
+  } catch (err) {
+    console.error('bootstrap failed', err);
+    await resetTemporaryEdit('Storage unavailable; this edit will not be saved');
   }
   updateChrome();
   updatePlayInfo();
@@ -122,6 +139,7 @@ async function resetTemporaryEdit(message) {
   pendingSeek = null;
   lastSelKey = '';
   fileOpen.clear();
+  disposeMediaSessions();
   store.load({ name: defaultSessionName() });
   setStatus(message);
 }
@@ -133,6 +151,7 @@ async function openSession(sessionId, { restore }) {
   pendingSeek = null;
   lastSelKey = '';
   fileOpen.clear();
+  disposeMediaSessions();
   store.setSessionId(sessionId);
   setUrlSession(sessionId);
   const restored = restore && await store.restore(sessionId);
@@ -1046,16 +1065,6 @@ function even(v) {
   return Math.max(2, Math.round(v / 2) * 2);
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, ch => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[ch]));
-}
-
-function escapeAttr(s) {
-  return escapeHtml(s).replace(/`/g, '&#96;');
-}
-
 function renderSourcePicker(project, ui) {
   const picker = el.sourcePicker;
   if (!picker) return;
@@ -1139,7 +1148,7 @@ async function ensureSourceThumb(source) {
 function onState(project, ui) {
   // source dropdown
   const opts = project.sources.map(s =>
-    '<option value="' + s.id + '"' + (s.id === ui.activeSourceId ? ' selected' : '') + '>' + s.fileName + '</option>').join('');
+    '<option value="' + escapeAttr(s.id) + '"' + (s.id === ui.activeSourceId ? ' selected' : '') + '>' + escapeHtml(s.fileName) + '</option>').join('');
   if (el.sourceSelect.innerHTML !== opts) el.sourceSelect.innerHTML = opts;
   renderSourcePicker(project, ui);
 

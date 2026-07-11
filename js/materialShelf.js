@@ -1,7 +1,7 @@
 ﻿// materialShelf.js - cutout material cards: select, double-click play, drag to output
-import { store } from './store.js?v=20260711-sessions';
-import { horizontalCardThumb, horizontalCropSignature, cloneCanvas } from './thumbnails.js?v=20260711-sessions';
-import { fmtDur } from './util.js?v=20260707-horizontal-crop';
+import { store } from './store.js';
+import { horizontalCardThumb, horizontalCropSignature, cloneCanvas } from './thumbnails.js';
+import { escapeHtml, fmtDur } from './util.js';
 
 let shelfEl, countEl;
 let onPlay = () => {};
@@ -17,7 +17,15 @@ export function init(elements, { play } = {}) {
   countEl = elements.count;
   if (play) onPlay = play;
   shelfEl.addEventListener('wheel', onShelfWheel, { passive: false });
-  store.subscribe(render);
+  // Coalesced onto rAF: every updateLive during timeline drags would
+  // otherwise rebuild all shelf cards per pointermove.
+  store.subscribe(scheduleRender);
+}
+
+let renderRaf = 0;
+function scheduleRender() {
+  if (renderRaf) return;
+  renderRaf = requestAnimationFrame(() => { renderRaf = 0; render(); });
 }
 
 function selMatId() {
@@ -190,12 +198,6 @@ function setMaterialTitle(id, value) {
     if (trimmed) target.title = trimmed;
     else delete target.title;
   });
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, ch => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[ch]));
 }
 
 // Delete a material and every output that depends on it.

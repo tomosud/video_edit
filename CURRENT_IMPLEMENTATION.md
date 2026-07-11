@@ -264,17 +264,18 @@ UI state:
 
 ## 主要ファイル
 
-- `index.html`: UI 構造。
+- `index.html`: UI 構造。importmap でモジュールのキャッシュバスターを一元管理。
 - `css/style.css`: レイアウト、タイムライン、字幕、セッション画面。
 - `js/app.js`: アプリ全体の結線、セッション画面、source picker、再生状態、export entry。
-- `js/store.js`: 中央 state、undo/redo、session autosave。
+- `js/store.js`: 中央 state、undo/redo、session autosave、保存失敗通知。
 - `js/db.js`: IndexedDB wrapper、session prune、容量推定。
 - `js/fileOpen.js`: 動画追加、IndexedDB media restore、object URL 管理。
 - `js/sourceTimeline.js`: `1 Cut / Split`、俯瞰タイムライン、cut band 編集。
 - `js/frameStrip.js`: 下段の frame strip。
 - `js/materialShelf.js`: `2 Cut Stock`。
 - `js/outputSequenceTimeline.js`: `3 Edit`、cut 並び替え、字幕バー、edit playhead。
-- `js/captions.js`: 字幕タイミング、密度、折り返し、canvas 描画。
+- `js/captions.js`: 字幕タイミング、密度、折り返し、canvas 描画、プレビュー用字幕解決。
+- `js/drawing.js`: 縦・横クロップ描画とブラー背景の共通実装。preview / thumbnail / export はすべてここを使い、見た目を一致させる。
 - `js/horizontalPreview.js`: 16:9 preview。
 - `js/cropPreview.js`: 9:16 preview。
 - `js/export.js`: MP4 書き出し。
@@ -291,18 +292,37 @@ Open:
 http://127.0.0.1:8000/
 ```
 
-UI 更新が出ない場合は hard reload。COOP/COEP 用 service worker と ES module cache の影響があるため、必要に応じて query version を上げる。
+UI 更新が出ない場合は hard reload の後、`index.html` の importmap 内バージョン文字列(例: `20260712a`)を一括置換で上げる。
+
+キャッシュバスターの仕組み:
+
+- `js/` 内の import 文にはクエリを付けない。
+- `index.html` の importmap が全モジュールを同一バージョンのクエリ付き URL に固定する。
+- これにより一部モジュールだけ古い版が混ざる事故(過去の store.js 二重ロードバグ)が構造的に起きない。
+- COOP/COEP 用 service worker は削除済み(SharedArrayBuffer 不使用のため不要)。起動時に旧登録を unregister する。
 
 ## 確認コマンド
 
 ```powershell
-node --check js/app.js
-node --check js/sourceTimeline.js
-node --check js/outputSequenceTimeline.js
-node --check js/materialShelf.js
-node --check js/outputSequence.js
+Get-ChildItem js/*.js | ForEach-Object { node --check $_.FullName }
 git diff --check
 ```
+
+## 直近のリファクタリング (2026-07-11)
+
+安全性・負荷・保守性の改善。UI 挙動は変えていない。
+
+- importmap によるキャッシュバスター一元化(`js/` 内 import のクエリ全廃)。
+- 未使用ファイル削除: `outputSequence.js` / `clipList.js` / `trimTimeline.js` / `previewSequence.js` / `projectStore.js` / `lib/coi-serviceworker.js`。
+- 字幕テキスト編集が undo 1 ステップとして記録されるようになった。
+- autosave / 動画 File 保存の失敗をステータス表示に出す(`store.setPersistErrorHandler`)。
+- 起動時のストレージ失敗で空編集にフォールバック(白画面防止)。
+- export 中のバックグラウンドタブでフリーズしない(rAF と timer の race)。
+- セッション切替時に Mediabunny デコードセッションを破棄(リーク防止)。
+- export 時に同一ファイルなら object URL を revoke しない(プレビュー破壊防止)。
+- undo 履歴の IndexedDB 書き込みをデバウンス、shelf / edit タイムラインの store 購読 render を rAF に集約。
+- クロップ描画を `js/drawing.js` に、プレビュー字幕解決を `js/captions.js` に共通化。`escapeHtml` は `js/util.js` に集約。
+- source ドロップダウンの fileName エスケープ漏れ修正。
 
 ## 既知の注意点
 

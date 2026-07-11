@@ -4,8 +4,36 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ViralCut - Vertical Video Editor</title>
-  <script src="lib/coi-serviceworker.js"></script>
-  <link rel="stylesheet" href="css/style.css?v=20260711-overview">
+  <!-- Cache busting is centralized here: bump the version string below
+       (one search-replace in this file) whenever any js/css changes.
+       Module imports in js/ carry no query strings; this import map pins
+       every module to the same version so mixed-version module graphs
+       (the old duplicated-store bug) cannot happen. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "./js/store.js":                   "./js/store.js?v=20260712a",
+      "./js/db.js":                      "./js/db.js?v=20260712a",
+      "./js/util.js":                    "./js/util.js?v=20260712a",
+      "./js/fileOpen.js":                "./js/fileOpen.js?v=20260712a",
+      "./js/mediaInfo.js":               "./js/mediaInfo.js?v=20260712a",
+      "./js/mediaSession.js":            "./js/mediaSession.js?v=20260712a",
+      "./js/mediabunny.js":              "./js/mediabunny.js?v=20260712a",
+      "./js/thumbnails.js":              "./js/thumbnails.js?v=20260712a",
+      "./js/sourceTimeline.js":          "./js/sourceTimeline.js?v=20260712a",
+      "./js/frameStrip.js":              "./js/frameStrip.js?v=20260712a",
+      "./js/materialShelf.js":           "./js/materialShelf.js?v=20260712a",
+      "./js/outputSequenceTimeline.js":  "./js/outputSequenceTimeline.js?v=20260712a",
+      "./js/captions.js":                "./js/captions.js?v=20260712a",
+      "./js/drawing.js":                 "./js/drawing.js?v=20260712a",
+      "./js/cropPreview.js":             "./js/cropPreview.js?v=20260712a",
+      "./js/horizontalPreview.js":       "./js/horizontalPreview.js?v=20260712a",
+      "./js/export.js":                  "./js/export.js?v=20260712a",
+      "./lib/mediabunny.min.js":         "./lib/mediabunny.min.js?v=mb-1"
+    }
+  }
+  </script>
+  <link rel="stylesheet" href="css/style.css?v=20260712a">
 </head>
 <body>
   <div id="app">
@@ -167,6 +195,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260711-overview"></script>
+  <script type="module" src="js/app.js?v=20260712a"></script>
 </body>
 </html>

@@ -112,6 +112,52 @@ export function activeCaptionText(project, sequenceMs) {
   return '';
 }
 
+// ---- preview caption resolution (shared by the 16:9 and 9:16 previews) ----
+
+export function captionOutputId(project, captionId) {
+  if (!captionId) return null;
+  return (project?.outputs || []).find(o => (o.captions || []).some(c => c.id === captionId))?.id || null;
+}
+
+// What caption text should a preview draw for the current selection and
+// video time? Mirrors the sequence-time math used by activeCaptionText.
+export function previewCaptionText(project, ui, videoTimeSec) {
+  const selectedOutputId = captionOutputId(project, ui.selectedCaptionId) || ui.selection?.id;
+  if (!selectedOutputId) return '';
+  let sequenceMs = 0;
+  for (const output of (project?.outputs || [])) {
+    const material = (project.materials || []).find(m => m.id === output.materialId);
+    if (!material) continue;
+    const durationMs = Math.max(MIN_CAPTION_MS, Math.round(Math.max(0, material.out - material.in) * 1000));
+    if (output.id === selectedOutputId) {
+      const localMs = Math.round(Math.max(0, ((videoTimeSec || material.in) - material.in) * 1000));
+      const atMs = sequenceMs + localMs;
+      return selectedCaptionTextAt(project, ui.selectedCaptionId, atMs) || activeCaptionText(project, atMs);
+    }
+    sequenceMs += durationMs;
+  }
+  return '';
+}
+
+function selectedCaptionTextAt(project, captionId, sequenceMs) {
+  if (!captionId) return '';
+  let startMs = 0;
+  for (const output of project.outputs) {
+    const material = project.materials.find(m => m.id === output.materialId);
+    if (!material) continue;
+    const durationMs = Math.max(MIN_CAPTION_MS, Math.round(Math.max(0, material.out - material.in) * 1000));
+    const caption = (output.captions || []).find(c => c.id === captionId);
+    if (caption) {
+      const abs = captionAbsolute(caption, startMs, material);
+      const primary = captionTextAt(abs, sequenceMs, 'text');
+      const secondary = captionTextAt(abs, sequenceMs, 'secondaryText');
+      return primary || secondary ? { primary, secondary } : '';
+    }
+    startMs += durationMs;
+  }
+  return '';
+}
+
 export function captionDensity(caption) {
   if (!caption?.text && !caption?.secondaryText) return 0;
   const abs = captionAbsolute(caption, 0);

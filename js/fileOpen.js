@@ -1,8 +1,8 @@
 ﻿// fileOpen.js - browser source media registry with IndexedDB recovery.
-import { store, uid } from './store.js?v=20260711-sessions';
-import * as db from './db.js?v=20260711-sessions';
-import { hashKey } from './util.js?v=20260707-horizontal-crop';
-import { readMediaInfo } from './mediaInfo.js?v=20260707-horizontal-crop';
+import { store, uid } from './store.js';
+import * as db from './db.js';
+import { hashKey } from './util.js';
+import { readMediaInfo } from './mediaInfo.js';
 
 const media = new Map(); // sourceId -> { file, url, handle }
 let addVideoInFlight = null;
@@ -40,8 +40,12 @@ export async function freshFileFor(sourceId) {
   if (h?.getFile) {
     try {
       const file = await h.getFile();
-      register(sourceId, file, h);
-      return file;
+      const same = entry.file && file.name === entry.file.name &&
+        file.size === entry.file.size && file.lastModified === entry.file.lastModified;
+      // Only re-register when the file actually changed on disk: register()
+      // revokes the old object URL, which the preview <video> may be playing.
+      if (!same) register(sourceId, file, h);
+      return same ? entry.file : file;
     } catch {
       /* fall back to the File already selected for this temporary session */
     }
@@ -94,7 +98,7 @@ async function addOneVideo(file, handle = null) {
     s.mediaKey === mediaKey || (s.fileName === file.name && s.size === file.size));
   if (existing) {
     register(existing.id, file, handle);
-    saveSessionMedia(existing.id, file).catch((err) => console.warn('media save failed', err));
+    saveSessionMedia(existing.id, file).catch((err) => { console.warn('media save failed', err); store.reportPersistError(err); });
     store.setUI({ activeSourceId: existing.id });
     return existing.id;
   }
@@ -127,7 +131,7 @@ async function addOneVideo(file, handle = null) {
     });
     ui.activeSourceId = id;
   });
-  saveSessionMedia(id, file).catch((err) => console.warn('media save failed', err));
+  saveSessionMedia(id, file).catch((err) => { console.warn('media save failed', err); store.reportPersistError(err); });
   return id;
 }
 
@@ -167,6 +171,9 @@ function pickWithInput() {
     inp.accept = 'video/*';
     inp.multiple = true;
     inp.onchange = () => resolve(inp.files || []);
+    // Without this, cancelling the dialog leaves the promise pending forever
+    // and addVideoInFlight blocks every later Add Video click.
+    inp.oncancel = () => resolve([]);
     inp.click();
   });
 }

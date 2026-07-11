@@ -1,5 +1,6 @@
 ﻿// thumbnails.js - Mediabunny CanvasSink thumbnails, memory-only
-import { getVideoFrameCanvas } from './mediaSession.js?v=20260711-sessions';
+import { getVideoFrameCanvas } from './mediaSession.js';
+import { drawHorizontalFrame } from './drawing.js';
 
 const THUMB_H = 132;
 const TARGET_SPACING = 200;
@@ -71,30 +72,8 @@ function drawHorizontalCropped(sourceCanvas, width, height, crop) {
   canvas.height = Math.max(1, Math.round(height));
   const ctx = canvas.getContext('2d');
   if (!ctx || !sourceCanvas.width || !sourceCanvas.height) return canvas;
-
-  const W = canvas.width, H = canvas.height;
-  const vw = sourceCanvas.width, vh = sourceCanvas.height;
-  const { panX = 0.5, panY = 0.5, zoom = 1, bgBlur = 1 } = crop || {};
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, W, H);
-
-  const blur = Math.max(0, Math.min(1, bgBlur));
-  if (blur > 0) {
-    const bgScale = Math.max(W / vw, H / vh) * 1.08;
-    const bgW = vw * bgScale, bgH = vh * bgScale;
-    ctx.save();
-    ctx.globalAlpha = blur;
-    ctx.filter = 'blur(18px)';
-    ctx.drawImage(sourceCanvas, (W - bgW) / 2, (H - bgH) / 2, bgW, bgH);
-    ctx.restore();
-  }
-
-  const scale = (H / vh) * Math.max(0.001, zoom);
-  const dw = vw * scale;
-  const dh = vh * scale;
-  const dx = dw <= W ? (W - dw) * panX : -(dw - W) * panX;
-  const dy = dh <= H ? (H - dh) * panY : -(dh - H) * panY;
-  ctx.drawImage(sourceCanvas, dx, dy, dw, dh);
+  // lighter blur than the full-size previews: thumbnails are small
+  drawHorizontalFrame(ctx, sourceCanvas, canvas.width, canvas.height, crop, { blurPx: 18 });
   return canvas;
 }
 

@@ -1,8 +1,8 @@
 ﻿// outputSequenceTimeline.js - edit timeline with playhead, wheel zoom/pan, and anchored captions
-import { store, uid } from './store.js?v=20260711-sessions';
-import { horizontalCardThumb, horizontalCropSignature, cloneCanvas } from './thumbnails.js?v=20260711-sessions';
-import { fmtDur } from './util.js?v=20260707-horizontal-crop';
-import { MIN_CAPTION_MS, captionAbsolute, captionDensity, captionLines, densityClass } from './captions.js?v=20260711-edit-timeline-drag';
+import { store, uid } from './store.js';
+import { horizontalCardThumb, horizontalCropSignature, cloneCanvas } from './thumbnails.js';
+import { escapeHtml, fmtDur } from './util.js';
+import { MIN_CAPTION_MS, captionAbsolute, captionDensity, captionLines, densityClass } from './captions.js';
 
 const MIN_SPAN_SEC = 1;
 const MIN_CLIP_PX = 28;
@@ -61,7 +61,16 @@ export function init(elements, hooks = {}) {
     video.addEventListener('ended', stopPlayheadLoop);
   }
 
-  store.subscribe(render);
+  // Coalesce store-driven re-renders onto rAF: updateLive fires per
+  // pointermove during drags and a full DOM rebuild per event is wasted work.
+  // Direct render() calls (wheel/pan/resize) stay synchronous.
+  store.subscribe(scheduleRender);
+}
+
+let renderRaf = 0;
+function scheduleRender() {
+  if (renderRaf) return;
+  renderRaf = requestAnimationFrame(() => { renderRaf = 0; render(); });
 }
 
 function render() {
@@ -404,7 +413,12 @@ function mountCaptionTextEdit(captionId) {
   const secondary = captionEditTextarea(found.caption.secondaryText || '', 'Second');
   primary.dataset.captionField = 'text';
   secondary.dataset.captionField = 'secondaryText';
+  // One undo snapshot per text-edit session, pushed before the first change,
+  // so Ctrl+Z after typing restores the pre-edit text instead of silently
+  // dropping everything typed since the previous commit.
+  let undoPushed = false;
   const sync = () => {
+    if (!undoPushed) { undoPushed = true; store.beginAction(); }
     store.updateLive((p, ui) => {
       const cur = findCaption(p, captionId);
       if (!cur) return;
@@ -979,9 +993,4 @@ export function activeCaptionTextAt(project, sequenceMs) {
 }
 
 function displayName(m, src) { return (m?.title || '').trim() || src?.fileName || 'Untitled material'; }
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, ch => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[ch]));
-}
 

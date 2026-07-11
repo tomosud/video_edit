@@ -11,6 +11,16 @@ export function fmtDur(sec) {
   return sec.toFixed(1) + 's';
 }
 
+export function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[ch]));
+}
+
+export function escapeAttr(s) {
+  return escapeHtml(s).replace(/`/g, '&#96;');
+}
+
 export function frameFromTime(time, fps, maxFrame = Number.MAX_SAFE_INTEGER) {
   const rate = fps || 30;
   const frame = Math.floor(Math.max(0, time || 0) * rate + 1e-6);

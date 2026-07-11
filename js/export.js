@@ -1,7 +1,8 @@
 ﻿// export.js - deterministic frame export via Mediabunny/WebCodecs.
-import { store } from './store.js?v=20260711-sessions';
-import { freshFileFor } from './fileOpen.js?v=20260711-sessions';
-import { activeCaptionText, drawCaption } from './captions.js?v=20260711-caption-boundary-add';
+import { store } from './store.js';
+import { freshFileFor } from './fileOpen.js';
+import { activeCaptionText, drawCaption } from './captions.js';
+import { drawVerticalFrame, drawHorizontalFrame } from './drawing.js';
 import {
   ALL_FORMATS,
   BlobSource,
@@ -15,10 +16,22 @@ import {
   Output,
   canEncodeAudio,
   canEncodeVideo,
-} from './mediabunny.js?v=20260707-horizontal-crop';
+} from './mediabunny.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const even = (v) => Math.max(2, Math.round(v / 2) * 2);
+
+// Yield to the event loop between encode batches. requestAnimationFrame alone
+// stops firing in background tabs and would freeze the export, so race it
+// against a timer.
+function nextBreath() {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    requestAnimationFrame(finish);
+    setTimeout(finish, 50);
+  });
+}
 
 function sourceById(project, id) {
   return project.sources.find(s => s.id === id) || null;
@@ -33,81 +46,6 @@ function clipBounds(project, material, outputFps) {
   const outFrame = clamp(Math.round(material.out * sourceFps), inFrame + 1, maxFrame);
   const frameCount = Math.max(1, Math.round((outFrame / sourceFps - inFrame / sourceFps) * outputFps));
   return { sourceFps, inFrame, outFrame, inTime: inFrame / sourceFps, outTime: outFrame / sourceFps, frameCount };
-}
-
-function drawFrame(ctx, src, outW, outH, crop) {
-  const vw = src.width, vh = src.height;
-  if (!vw || !vh) return;
-  const { panX = 0.5, panY = 0.5, zoom = 1, bgBlur = 1 } = crop || {};
-  const targetAspect = outW / outH;
-  const sourceAspect = vw / vh;
-
-  let baseW, baseH;
-  if (sourceAspect > targetAspect) {
-    baseH = vh;
-    baseW = vh * targetAspect;
-  } else {
-    baseW = vw;
-    baseH = vw / targetAspect;
-  }
-
-  const cropW = baseW / zoom;
-  const cropH = baseH / zoom;
-  const sx = (vw - cropW) * panX;
-  const sy = (vh - cropH) * panY;
-
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, outW, outH);
-
-  if ((sx < 0 || sy < 0 || sx + cropW > vw || sy + cropH > vh) && bgBlur > 0) {
-    const bgScale = Math.max(outW / vw, outH / vh) * 1.08;
-    const bgW = vw * bgScale, bgH = vh * bgScale;
-    ctx.save();
-    ctx.globalAlpha = clamp(bgBlur, 0, 1);
-    ctx.filter = 'blur(24px)';
-    ctx.drawImage(src, (outW - bgW) / 2, (outH - bgH) / 2, bgW, bgH);
-    ctx.restore();
-  }
-
-  const vx = Math.max(0, sx);
-  const vy = Math.max(0, sy);
-  const vx2 = Math.min(vw, sx + cropW);
-  const vy2 = Math.min(vh, sy + cropH);
-  const sw = vx2 - vx;
-  const sh = vy2 - vy;
-  if (sw <= 0 || sh <= 0) return;
-
-  const dx = (vx - sx) / cropW * outW;
-  const dy = (vy - sy) / cropH * outH;
-  const dw = sw / cropW * outW;
-  const dh = sh / cropH * outH;
-  ctx.drawImage(src, vx, vy, sw, sh, dx, dy, dw, dh);
-}
-
-function drawHorizontalFrame(ctx, src, outW, outH, crop) {
-  const vw = src.width, vh = src.height;
-  if (!vw || !vh) return;
-  const { panX = 0.5, panY = 0.5, zoom = 1, bgBlur = 1 } = crop || {};
-
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, outW, outH);
-
-  if (bgBlur > 0) {
-    const bgScale = Math.max(outW / vw, outH / vh) * 1.08;
-    const bgW = vw * bgScale, bgH = vh * bgScale;
-    ctx.save();
-    ctx.globalAlpha = clamp(bgBlur, 0, 1);
-    ctx.filter = 'blur(24px)';
-    ctx.drawImage(src, (outW - bgW) / 2, (outH - bgH) / 2, bgW, bgH);
-    ctx.restore();
-  }
-
-  const scale = (outH / vh) * Math.max(0.001, zoom);
-  const dw = vw * scale;
-  const dh = vh * scale;
-  const dx = dw <= outW ? (outW - dw) * panX : -(dw - outW) * panX;
-  const dy = dh <= outH ? (outH - dh) * panY : -(dh - outH) * panY;
-  ctx.drawImage(src, dx, dy, dw, dh);
 }
 
 async function makeSourceSession(source) {
@@ -276,14 +214,14 @@ export async function exportProject({ width, height, fps: requestedFps, cropMode
         const sourceCanvas = await getFrameCanvas(session, it.bounds.sourceFps, sourceFrame);
         const crop = cropForItem(it, cropMode);
         if (cropMode === 'horizontal') drawHorizontalFrame(ctx, sourceCanvas, outW, outH, crop);
-        else drawFrame(ctx, sourceCanvas, outW, outH, crop);
+        else drawVerticalFrame(ctx, sourceCanvas, outW, outH, crop);
         drawCaption(ctx, outW, outH, activeCaptionText(project, Math.round((outTime + localFrame / fps) * 1000)));
         await canvasSource.add(outFrame / fps, frameDur);
 
         outFrame++;
         if ((outFrame & 7) === 0 || outFrame === totalFrames) {
           onProgress?.(Math.min(1, outFrame / totalFrames));
-          await new Promise(requestAnimationFrame);
+          await nextBreath();
         }
       }
       outTime += it.bounds.frameCount / fps;

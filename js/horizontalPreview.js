@@ -1,6 +1,7 @@
-﻿// horizontalPreview.js - 16:9 canvas preview with crop/pan/zoom/blur.
-import { store } from './store.js?v=20260711-sessions';
-import { activeCaptionText as captionTextForSequence, captionAbsolute, captionTextAt, drawCaption } from './captions.js?v=20260711-caption-input-preview-inset';
+// horizontalPreview.js - 16:9 canvas preview with crop/pan/zoom/blur.
+import { store } from './store.js';
+import { previewCaptionText, captionOutputId, drawCaption } from './captions.js';
+import { drawHorizontalFrame } from './drawing.js';
 
 let canvas, ctx, video;
 let raf = 0;
@@ -47,41 +48,9 @@ function currentCrop() {
   return r?.material?.horizontalCrop || store.ui.horizontalCrop || { panX: 0.5, panY: 0.5, zoom: 1, bgBlur: 1 };
 }
 
-function sourceSize(source) {
-  return {
-    w: source?.videoWidth || source?.width || 0,
-    h: source?.videoHeight || source?.height || 0,
-  };
-}
-
-function drawBlurBackground(ctx, source, W, H, amount) {
-  if (amount <= 0) return;
-  const { w: vw, h: vh } = sourceSize(source);
-  if (!vw || !vh) return;
-  const scale = Math.max(W / vw, H / vh) * 1.08;
-  const dw = vw * scale, dh = vh * scale;
-  ctx.save();
-  ctx.globalAlpha = amount;
-  ctx.filter = 'blur(24px)';
-  ctx.drawImage(source, (W - dw) / 2, (H - dh) / 2, dw, dh);
-  ctx.restore();
-}
-
-function drawCropped(ctx, source, W, H, crop) {
-  const { w: vw, h: vh } = sourceSize(source);
-  if (!vw || !vh) return;
-  const { panX = 0.5, panY = 0.5, zoom = 1, bgBlur = 1 } = crop || {};
-
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, W, H);
-  drawBlurBackground(ctx, source, W, H, Math.max(0, Math.min(1, bgBlur)));
-
-  const scale = (H / vh) * Math.max(0.001, zoom);
-  const dw = vw * scale;
-  const dh = vh * scale;
-  const dx = dw <= W ? (W - dw) * panX : -(dw - W) * panX;
-  const dy = dh <= H ? (H - dh) * panY : -(dh - H) * panY;
-  ctx.drawImage(source, dx, dy, dw, dh);
+function resolveSelectedCaption() {
+  const outputId = captionOutputId(store.get(), store.ui.selectedCaptionId);
+  return outputId ? store.resolve({ kind: 'output', id: outputId }) : null;
 }
 
 function draw() {
@@ -89,63 +58,9 @@ function draw() {
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
   if (!video || video.readyState < 2 || !video.videoWidth) return;
-  drawCropped(ctx, video, W, H, currentCrop());
-  drawActiveCaption(ctx, W, H);
-}
-
-function drawActiveCaption(ctx, W, H) {
-  const text = currentCaptionText();
+  drawHorizontalFrame(ctx, video, W, H, currentCrop());
+  const text = previewCaptionText(store.get(), store.ui, video.currentTime);
   if (text) drawCaption(ctx, W, H, text);
-}
-
-function currentCaptionText() {
-  const selected = selectedOutputForCaption() || store.ui.selection.id;
-  if (!selected) return '';
-  const p = store.get();
-  let sequenceMs = 0;
-  for (const output of p.outputs) {
-    const material = p.materials.find(m => m.id === output.materialId);
-    if (!material) continue;
-    const durationMs = Math.max(250, Math.round(Math.max(0, material.out - material.in) * 1000));
-    if (output.id === selected) {
-      const localMs = Math.round(Math.max(0, ((video?.currentTime || material.in) - material.in) * 1000));
-      const atMs = sequenceMs + localMs;
-      return selectedCaptionTextAt(p, atMs) || captionTextForSequence(p, atMs);
-    }
-    sequenceMs += durationMs;
-  }
-  return '';
-}
-
-function selectedOutputForCaption() {
-  const id = store.ui.selectedCaptionId;
-  if (!id) return null;
-  return store.get().outputs.find(output => (output.captions || []).some(c => c.id === id))?.id || null;
-}
-
-function resolveSelectedCaption() {
-  const outputId = selectedOutputForCaption();
-  return outputId ? store.resolve({ kind: 'output', id: outputId }) : null;
-}
-
-function selectedCaptionTextAt(project, sequenceMs) {
-  const id = store.ui.selectedCaptionId;
-  if (!id) return '';
-  let startMs = 0;
-  for (const output of project.outputs) {
-    const material = project.materials.find(m => m.id === output.materialId);
-    if (!material) continue;
-    const durationMs = Math.max(250, Math.round(Math.max(0, material.out - material.in) * 1000));
-    const caption = (output.captions || []).find(c => c.id === id);
-    if (caption) {
-      const abs = captionAbsolute(caption, startMs, material);
-      const primary = captionTextAt(abs, sequenceMs, 'text');
-      const secondary = captionTextAt(abs, sequenceMs, 'secondaryText');
-      return primary || secondary ? { primary, secondary } : '';
-    }
-    startMs += durationMs;
-  }
-  return '';
 }
 
 function loop() {
@@ -155,4 +70,3 @@ function loop() {
 
 function startLoop() { if (!raf) loop(); }
 function stopLoop() { cancelAnimationFrame(raf); raf = 0; draw(); }
-

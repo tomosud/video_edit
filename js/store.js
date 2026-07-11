@@ -1,8 +1,9 @@
 ﻿// store.js - central editing state + pub/sub + undo/redo + IndexedDB autosave
-import * as db from './db.js?v=20260711-sessions';
+import * as db from './db.js';
 
 const HISTORY_LIMIT = 100;
 const AUTOSAVE_DEBOUNCE = 500;
+const HISTORY_SAVE_DEBOUNCE = 800;
 const SESSION_LIMIT = 15;
 
 function emptyProject() {
@@ -44,7 +45,14 @@ class Store {
     this._undo = [];
     this._redo = [];
     this._saveTimer = null;
+    this._historyTimer = null;
+    this._persistError = () => {};
   }
+
+  // called when an IndexedDB autosave/history write fails (quota, blocked
+  // storage). The app surfaces it so silent data loss cannot happen.
+  setPersistErrorHandler(fn) { this._persistError = typeof fn === 'function' ? fn : () => {}; }
+  reportPersistError(err) { this._persistError(err); }
 
   // ---- pub/sub ----
   subscribe(fn) { this._subs.add(fn); return () => this._subs.delete(fn); }
@@ -139,16 +147,25 @@ class Store {
     if (!this.shouldPersistSession()) return;
     this._saveTimer = setTimeout(() => {
       const now = Date.now();
-      db.saveSession(this.sessionId, this.sessionPayload(now)).then(() => db.pruneSessions(SESSION_LIMIT)).catch((err) => console.warn('session save failed', err));
+      db.saveSession(this.sessionId, this.sessionPayload(now))
+        .then(() => db.pruneSessions(SESSION_LIMIT))
+        .catch((err) => { console.warn('session save failed', err); this._persistError(err); });
     }, AUTOSAVE_DEBOUNCE);
   }
+  // Debounced: the undo/redo stack can be large (full project snapshots),
+  // so avoid rewriting it to IndexedDB on every single commit.
   _persistHistory() {
     if (!this.shouldPersistSession()) return;
-    db.saveSessionHistory(this.sessionId, this.historyState()).catch(() => {});
+    clearTimeout(this._historyTimer);
+    this._historyTimer = setTimeout(() => {
+      db.saveSessionHistory(this.sessionId, this.historyState())
+        .catch((err) => { console.warn('history save failed', err); this._persistError(err); });
+    }, HISTORY_SAVE_DEBOUNCE);
   }
 
   async flushSave() {
     clearTimeout(this._saveTimer);
+    clearTimeout(this._historyTimer);
     if (!this.shouldPersistSession()) return;
     const now = Date.now();
     await db.saveSession(this.sessionId, this.sessionPayload(now));
