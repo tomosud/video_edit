@@ -14,7 +14,7 @@ Your videos never leave your computer.
 
 https://github.com/user-attachments/assets/2f78c3a2-bd52-47a0-9cd5-3c45e27d1c89
 
-## 使い方 / How to use
+## 使い方
 
 1. `Add Video` で動画を追加(ボタンへのドロップも可)
 2. `1 Cut / Split` タイムラインの空白をダブルクリックしてカットを作成、ドラッグで範囲調整
@@ -23,6 +23,7 @@ https://github.com/user-attachments/assets/2f78c3a2-bd52-47a0-9cd5-3c45e27d1c89
 5. プレビューをダブルクリックすると縦・横それぞれのクロップを調整できる
 6. `ExportVideo` で MP4 を書き出し(縦・横・両方)
 
+## How to use
 1. `Add Video` to add videos (drag & drop onto the button also works)
 2. Double-click empty space on the `1 Cut / Split` timeline to make a cut, drag to adjust
 3. Drag cards from `2 Cut Stock` into `3 Edit`
