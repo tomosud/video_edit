@@ -1,5 +1,8 @@
 # ViralCut Current Status
 
+Note: the latest implementation summary is now in [CURRENT_IMPLEMENTATION.md](CURRENT_IMPLEMENTATION.md).
+This file is older historical status from 2026-07-07.
+
 Last updated: 2026-07-07
 
 This file is the single source of truth for the current implementation. Older planning and handoff Markdown files were removed because they described pre-Mediabunny or partially obsolete designs and had become hard to trust.

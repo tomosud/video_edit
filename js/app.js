@@ -4,17 +4,18 @@ import * as fileOpen from './fileOpen.js?v=20260711-sessions';
 import * as db from './db.js?v=20260711-sessions';
 import * as cropPreview from './cropPreview.js?v=20260711-sessions';
 import * as horizontalPreview from './horizontalPreview.js?v=20260711-sessions';
-import * as srcTimeline from './sourceTimeline.js?v=20260711-sessions';
+import * as srcTimeline from './sourceTimeline.js?v=20260711-overview';
 import * as frameStrip from './frameStrip.js?v=20260711-sessions';
 import * as shelf from './materialShelf.js?v=20260711-sessions';
 import * as outSeq from './outputSequenceTimeline.js?v=20260711-sessions';
+import { cardThumb, cloneCanvas } from './thumbnails.js?v=20260711-sessions';
 import { exportProject, downloadBlob } from './export.js?v=20260711-sessions';
 import { fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js?v=20260707-horizontal-crop';
 
 const $ = (id) => document.getElementById(id);
 const el = {};
 ['btnNewProject','btnAddVideo','sourceSelect','btnUndo','btnRedo',
- 'btnExport','status','playInfo','srcVideo','srcEmpty','origPane','origTime','btnPlay','btnLoop','vertPane','vertCanvas','horizCanvas',
+ 'btnExport','status','playInfo','sourcePicker','srcVideo','srcEmpty','origPane','origTime','btnPlay','btnLoop','vertPane','vertCanvas','horizCanvas',
  'panX','panY','zoom','bgBlur','verticalCropReset',
  'sourcePanX','sourcePanY','sourceZoom','sourceBgBlur','sourceCropReset',
  'overlay','overlayMsg','overlayProg',
@@ -33,7 +34,10 @@ let sequence = null;
 let transportRaf = 0;
 let sequenceAdvancing = false;
 let activeArea = 'timeline';
-const SESSION_LIMIT = 5;
+const SESSION_LIMIT = 15;
+let sourcePickerOpen = false;
+const sourceThumbs = new Map();
+const sourceThumbBusy = new Set();
 
 function init() {
   cropPreview.init(el.vertCanvas, el.srcVideo);
@@ -47,8 +51,9 @@ function init() {
   shelf.init({ shelf: el.shelf, count: el.shelfCount }, { play: playRange });
   outSeq.init({ list: el.outList, captionEditor: el.captionEditor, total: el.totalDur, video: el.srcVideo }, { play: playOutputFrom, seek: seekOutputTime });
   srcTimeline.onPlayRange(playRange);
+  store.setSessionMetaProvider(sessionMeta);
 
-  wireMenu(); wireTransport(); wireCrop(); wireShortcuts(); wireSeek(); wireConfirm(); wireAreas(); wireWorkspaceSplitters(); wireVideoDrop();
+  wireMenu(); wireSourcePicker(); wireTransport(); wireCrop(); wireShortcuts(); wireSeek(); wireConfirm(); wireAreas(); wireWorkspaceSplitters(); wireVideoDrop();
   store.subscribe(onState);
 
   bootstrap();
@@ -102,6 +107,14 @@ function wireMenu() {
   el.sourceSelect.onchange = () => store.setUI({ activeSourceId: el.sourceSelect.value });
 }
 
+function wireSourcePicker() {
+  document.addEventListener('pointerdown', (e) => {
+    if (!sourcePickerOpen || el.sourcePicker.contains(e.target)) return;
+    sourcePickerOpen = false;
+    renderSourcePicker(store.get(), store.ui);
+  });
+}
+
 async function resetTemporaryEdit(message) {
   stopSequence();
   try { el.srcVideo.pause(); } catch { /* ignore */ }
@@ -109,7 +122,7 @@ async function resetTemporaryEdit(message) {
   pendingSeek = null;
   lastSelKey = '';
   fileOpen.clear();
-  store.load({ name: 'temporary' });
+  store.load({ name: defaultSessionName() });
   setStatus(message);
 }
 
@@ -128,7 +141,7 @@ async function openSession(sessionId, { restore }) {
     refreshStateViews();
     setStatus(mediaRestored.length ? 'Session opened' : 'Session opened; video files are missing');
   } else {
-    store.load({ name: 'temporary' });
+    store.load({ name: defaultSessionName() });
     setStatus('New session ready');
   }
   updateChrome();
@@ -147,6 +160,26 @@ function setUrlSession(sessionId) {
 
 function makeSessionId() {
   return 'ses_' + (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9));
+}
+
+function defaultSessionName(date = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function sessionMeta() {
+  if (!store.get().outputs.length || !el.horizCanvas?.width || !el.horizCanvas?.height) return {};
+  try {
+    const c = document.createElement('canvas');
+    c.width = 240;
+    c.height = 135;
+    const ctx = c.getContext('2d');
+    if (!ctx) return {};
+    ctx.drawImage(el.horizCanvas, 0, 0, c.width, c.height);
+    return { thumbnail: c.toDataURL('image/jpeg', 0.54) };
+  } catch {
+    return {};
+  }
 }
 
 function hasWork() {
@@ -705,7 +738,7 @@ function wireShortcuts() {
     else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); store.redo(); }
     else if (mod && e.key.toLowerCase() === 's') {
       e.preventDefault();
-      store.flushSave().then(() => setStatus(store.get().sources.length ? 'Session saved' : 'Empty project is not saved'));
+      store.flushSave().then(() => setStatus(store.get().materials.length ? 'Session saved' : 'Session without materials is not saved'));
     }
     else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
     else if (e.key === ' ') {
@@ -747,28 +780,49 @@ function closeConfirm(val) {
   if (r) r(val);
 }
 
-function askSessionChoice(sessions) {
+async function askSessionChoice(initialSessions) {
   const overlay = document.createElement('div');
   overlay.className = 'overlay session-picker-overlay';
   const box = document.createElement('div');
   box.className = 'overlay-box session-picker-box';
-  const rows = sessions.map(s => {
-    const updated = s.updatedAt || s.savedAt || 0;
-    const date = updated ? new Date(updated).toLocaleString() : '';
-    return `
-      <button class="session-choice" type="button" data-session-id="${escapeAttr(s.id)}">
-        <span class="session-choice-title">${escapeHtml(s.name || 'Untitled edit')}</span>
-        <span class="session-choice-meta">${escapeHtml(date)} / ${s.sourceCount || 0} videos / ${s.outputCount || 0} cuts</span>
-      </button>`;
-  }).join('');
-  box.innerHTML = `
-    <div class="session-picker-title">New or Open Session</div>
-    <button class="session-choice session-choice-new" type="button" data-session-id="new">
-      <span class="session-choice-title">New Project</span>
-      <span class="session-choice-meta">Create a new URL session</span>
-    </button>
-    <div class="session-picker-list">${rows || '<div class="session-picker-empty">No saved sessions</div>'}</div>
-    <div class="session-picker-actions"><button class="btn btn-sm" type="button" data-session-cancel>Cancel</button></div>`;
+  let sessions = await withSessionSizes(initialSessions);
+  const storageText = await storageUsageText();
+  const render = () => {
+    const rows = sessions.map((s, index) => {
+      const updated = s.updatedAt || s.savedAt || 0;
+      const date = updated ? new Date(updated).toLocaleString() : '';
+      const brightness = sessionBrightness(index, sessions.length);
+      const thumb = s.thumbnail
+        ? `<img src="${escapeAttr(s.thumbnail)}" alt="">`
+        : '<span>No thumbnail</span>';
+      return `
+        <div class="session-choice" data-session-id="${escapeAttr(s.id)}" style="--session-brightness:${brightness}">
+          <span class="session-choice-thumb" data-session-open="${escapeAttr(s.id)}">${thumb}</span>
+          <button class="session-choice-open" type="button" data-session-open="${escapeAttr(s.id)}">
+            <span class="session-choice-title">${escapeHtml(s.name || 'Untitled edit')}</span>
+            <span class="session-choice-meta">${escapeHtml(date)} / ${formatBytes(s.bytes || 0)} / ${s.outputCount || 0} cuts</span>
+          </button>
+          <button class="session-delete-btn" type="button" data-session-delete="${escapeAttr(s.id)}">Delete</button>
+        </div>`;
+    }).join('');
+    box.innerHTML = `
+      <div class="session-picker-title">New / Sessions</div>
+      <div class="session-storage">${escapeHtml(storageText)}</div>
+      <div class="session-warning">
+        <strong><span class="session-warning-icon">🗑</span>一時保存です / Temporary browser storage</strong>
+        <span>直近数回分の編集だけ復帰できます。このファイルは自動的に消えることがあります。</span>
+        <span>Recent edits can be restored. These files may be removed automatically.</span>
+        <small>消える条件: ブラウザのサイトデータ削除、空き容量不足、シークレット終了、このアプリの最近約15セッションから外れた場合。</small>
+        <small>Deleted when: site data is cleared, storage is low, private browsing ends, or the session falls outside about the latest 15 sessions in this app.</small>
+      </div>
+      <button class="session-choice session-choice-new" type="button" data-session-open="new">
+        <span class="session-choice-title">New Session</span>
+        <span class="session-choice-meta">Create a new temporary URL session</span>
+      </button>
+      <div class="session-picker-list">${rows || '<div class="session-picker-empty">No saved sessions</div>'}</div>
+      <div class="session-picker-actions"><button class="btn btn-sm" type="button" data-session-cancel>Cancel</button></div>`;
+  };
+  render();
   overlay.appendChild(box);
   document.body.appendChild(overlay);
   return new Promise((resolve) => {
@@ -777,12 +831,61 @@ function askSessionChoice(sessions) {
       resolve(value);
     };
     overlay.addEventListener('pointerdown', (e) => { if (e.target === overlay) finish(null); });
-    box.querySelector('[data-session-cancel]').onclick = () => finish(null);
-    for (const btn of box.querySelectorAll('[data-session-id]')) {
-      btn.onclick = () => finish(btn.dataset.sessionId);
-    }
-    box.querySelector('[data-session-id]')?.focus();
+    box.addEventListener('click', async (e) => {
+      const cancel = e.target.closest('[data-session-cancel]');
+      if (cancel) { finish(null); return; }
+      const del = e.target.closest('[data-session-delete]');
+      if (del) {
+        e.stopPropagation();
+        const id = del.dataset.sessionDelete;
+        const session = sessions.find(s => s.id === id);
+        if (!window.confirm(`Delete this temporary session?\n${session?.name || 'Untitled edit'}`)) return;
+        await db.deleteSession(id);
+        if (id === store.sessionId) {
+          finish('new');
+          return;
+        }
+        sessions = await withSessionSizes(await db.listSessions().catch(() => []));
+        render();
+        return;
+      }
+      const open = e.target.closest('[data-session-open]');
+      if (open) finish(open.dataset.sessionOpen);
+    });
+    box.querySelector('[data-session-open]')?.focus();
   });
+}
+
+async function withSessionSizes(sessions) {
+  return Promise.all(sessions.map(async (session) => ({
+    ...session,
+    bytes: await db.estimateSessionBytes(session.id).catch(() => 0),
+  })));
+}
+
+function sessionBrightness(index, count) {
+  if (count <= 1) return '1';
+  const t = Math.max(0, Math.min(1, index / Math.max(1, count - 1)));
+  return (1 - t * 0.8).toFixed(2);
+}
+
+async function storageUsageText() {
+  if (!navigator.storage?.estimate) return 'Storage: unavailable';
+  try {
+    const { usage = 0, quota = 0 } = await navigator.storage.estimate();
+    return `Storage: ${formatBytes(usage)} used / ${formatBytes(quota)} available quota (browser estimate)`;
+  } catch {
+    return 'Storage: unavailable';
+  }
+}
+
+function formatBytes(bytes) {
+  const value = Math.max(0, Number(bytes) || 0);
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let n = value;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return `${n >= 10 || i === 0 ? n.toFixed(0) : n.toFixed(1)} ${units[i]}`;
 }
 
 async function deleteSelected() {
@@ -953,12 +1056,92 @@ function escapeAttr(s) {
   return escapeHtml(s).replace(/`/g, '&#96;');
 }
 
+function renderSourcePicker(project, ui) {
+  const picker = el.sourcePicker;
+  if (!picker) return;
+  picker.innerHTML = '';
+  picker.className = 'source-picker' + (sourcePickerOpen ? ' open' : '');
+  const active = project.sources.find(s => s.id === ui.activeSourceId) || project.sources[0] || null;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'source-picker-button';
+  button.disabled = !project.sources.length;
+  button.append(sourceThumbNode(active), sourceNameNode(active?.fileName || 'No video'));
+  button.onclick = (e) => {
+    e.stopPropagation();
+    if (!project.sources.length) return;
+    sourcePickerOpen = !sourcePickerOpen;
+    renderSourcePicker(project, store.ui);
+  };
+  picker.appendChild(button);
+
+  if (!sourcePickerOpen) return;
+  const list = document.createElement('div');
+  list.className = 'source-picker-list';
+  for (const source of project.sources) {
+    ensureSourceThumb(source);
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'source-picker-option' + (source.id === ui.activeSourceId ? ' selected' : '');
+    row.append(sourceThumbNode(source), sourceNameNode(source.fileName));
+    row.onclick = (e) => {
+      e.stopPropagation();
+      sourcePickerOpen = false;
+      store.setUI({ activeSourceId: source.id });
+    };
+    list.appendChild(row);
+  }
+  picker.appendChild(list);
+}
+
+function sourceNameNode(text) {
+  const span = document.createElement('span');
+  span.className = 'source-picker-name';
+  span.textContent = text;
+  return span;
+}
+
+function sourceThumbNode(source) {
+  const slot = document.createElement('span');
+  slot.className = 'source-picker-thumb';
+  if (!source) {
+    slot.textContent = '-';
+    return slot;
+  }
+  const canvas = sourceThumbs.get(source.id);
+  if (canvas) slot.appendChild(cloneCanvas(canvas));
+  else {
+    slot.textContent = '...';
+    ensureSourceThumb(source);
+  }
+  return slot;
+}
+
+async function ensureSourceThumb(source) {
+  if (!source || sourceThumbs.has(source.id) || sourceThumbBusy.has(source.id)) return;
+  sourceThumbBusy.add(source.id);
+  try {
+    const duration = Math.max(0, Number(source.duration) || 0);
+    const t = duration ? Math.min(duration - 0.05, Math.max(0.4, duration * 0.2)) : 0;
+    const canvas = await cardThumb(source, t, 128, 72);
+    if (canvas) {
+      sourceThumbs.set(source.id, canvas);
+      renderSourcePicker(store.get(), store.ui);
+    }
+  } catch {
+    /* video may not be restored yet */
+  } finally {
+    sourceThumbBusy.delete(source.id);
+  }
+}
+
 // ---------- state -> UI ----------
 function onState(project, ui) {
   // source dropdown
   const opts = project.sources.map(s =>
     '<option value="' + s.id + '"' + (s.id === ui.activeSourceId ? ' selected' : '') + '>' + s.fileName + '</option>').join('');
   if (el.sourceSelect.innerHTML !== opts) el.sourceSelect.innerHTML = opts;
+  renderSourcePicker(project, ui);
 
   // selection side-effects (run once per selection change)
   const sel = ui.selection;

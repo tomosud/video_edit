@@ -48,7 +48,7 @@ function render() {
   totalEl.textContent = 'Total ' + fmtDur(layout.totalMs / 1000);
 
   if (!outs.length) {
-    listEl.innerHTML = '<div class="placeholder">Drag materials here to build the edit</div>';
+    listEl.innerHTML = '<div class="placeholder">Drag cut stock here to build the edit</div>';
     if (captionEditorEl) captionEditorEl.innerHTML = '<div class="placeholder">Drop clips, then add captions here</div>';
     return;
   }

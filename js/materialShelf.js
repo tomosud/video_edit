@@ -32,7 +32,7 @@ function render() {
   countEl.textContent = String(mats.length);
 
   if (!mats.length) {
-    shelfEl.innerHTML = '<div class="placeholder">Create materials on the timeline</div>';
+    shelfEl.innerHTML = '<div class="placeholder">Split cuts on the timeline</div>';
     return;
   }
   const sel = selMatId();

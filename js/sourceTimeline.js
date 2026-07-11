@@ -88,9 +88,12 @@ function onState(project, ui) {
   const src = store.activeSource();
   if (!src) {
     curSourceId = null;
-    els.thumbRow.innerHTML = '';
-    if (els.ovThumbRow) els.ovThumbRow.innerHTML = '';
-    els.bands.innerHTML = '';
+    duration = 0;
+    fps = 30;
+    renderedWin = null;
+    renderToken.cancelled = true;
+    overviewToken.cancelled = true;
+    clearTimeline();
     return;
   }
 
@@ -98,11 +101,32 @@ function onState(project, ui) {
     curSourceId = src.id;
     duration = src.duration || 0;
     fps = src.fps || 30;
+    renderToken.cancelled = true;
+    overviewToken.cancelled = true;
+    clearTimeline();
     store.ui.view = { start: 0, end: duration || 1 };
     regenNow();
     regenOverviewNow();
   }
   layout();
+}
+
+function clearTimeline() {
+  els.thumbRow.innerHTML = '';
+  els.thumbRow.style.transform = '';
+  els.bands.innerHTML = '';
+  els.playhead.style.display = 'none';
+  if (els.range) els.range.textContent = '-';
+  if (els.ovThumbRow) els.ovThumbRow.innerHTML = '';
+  if (els.ovClips) els.ovClips.innerHTML = '';
+  if (els.ovWindow) {
+    els.ovWindow.style.left = '0';
+    els.ovWindow.style.width = '0';
+  }
+  if (els.ovPlayhead) {
+    els.ovPlayhead.style.left = '0';
+    els.ovPlayhead.style.display = 'none';
+  }
 }
 
 // ---------- zoom (wheel) ----------
@@ -403,7 +427,10 @@ function positionPlayhead(t) {
   const x = timeToX(cur);
   els.playhead.style.left = x + 'px';
   els.playhead.style.display = (x < 0 || x > innerW()) ? 'none' : 'block';
-  if (els.ovPlayhead && duration) els.ovPlayhead.style.left = (cur / duration * 100) + '%';
+  if (els.ovPlayhead && duration) {
+    els.ovPlayhead.style.left = (cur / duration * 100) + '%';
+    els.ovPlayhead.style.display = 'block';
+  }
 }
 
 // smooth playhead during playback (timeupdate alone fires ~4x/sec)
@@ -414,7 +441,7 @@ function playheadLoop() { positionPlayhead(); playRaf = requestAnimationFrame(pl
 // ---------- overview minimap (full source) ----------
 function renderOverview() {
   if (!els.overview) return;
-  if (!duration) { els.ovClips.innerHTML = ''; els.ovWindow.style.width = '0'; return; }
+  if (!duration) { clearTimeline(); return; }
   const selMat = selectedMaterialId();
   const mats = store.get().materials.filter(m => m.sourceId === curSourceId);
   els.ovClips.innerHTML = mats.map(m => {

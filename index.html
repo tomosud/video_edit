@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ViralCut - Vertical Video Editor</title>
   <script src="lib/coi-serviceworker.js"></script>
-  <link rel="stylesheet" href="css/style.css?v=20260711-sessions">
+  <link rel="stylesheet" href="css/style.css?v=20260711-overview">
 </head>
 <body>
   <div id="app">
@@ -13,10 +13,11 @@
     <header id="menu">
       <span class="brand">ViralCut</span>
       <a class="repo-link" href="https://github.com/tomosud/video_edit" target="_blank" rel="noopener">GitHub</a>
-      <button id="btnNewProject" class="btn">New</button>
+      <button id="btnNewProject" class="btn">New / Sessions</button>
       <span class="sep"></span>
       <button id="btnAddVideo" class="btn" title="Click or drop video files here">Add Video</button>
       <select id="sourceSelect" class="sel" disabled></select>
+      <div id="sourcePicker" class="source-picker"></div>
       <span class="sep"></span>
       <button id="btnUndo" class="btn" disabled title="Ctrl+Z">Undo</button>
       <button id="btnRedo" class="btn" disabled title="Ctrl+Shift+Z">Redo</button>
@@ -28,8 +29,8 @@
 
     <section id="srcPane" class="pane area-pane" data-area="timeline">
       <div class="pane-head">
-        <span>1 Timeline</span>
-        <span class="hint">Click to seek / double-click empty space to create a material / double-click a material to edit</span>
+        <span>1 Cut / Split</span>
+        <span class="hint">Click to seek / double-click empty space to make cut stock / double-click a cut to edit</span>
         <span class="spacer"></span>
         <span id="srcRange" class="time">-</span>
       </div>
@@ -44,7 +45,7 @@
           <div id="thumbRow" class="thumb-row"></div>
           <div id="clipBands" class="clip-bands"></div>
           <div id="tlPlayhead" class="playhead"></div>
-          <div class="timeline-help">Double-click to cut.<br>Double-click a cut to edit.</div>
+          <div class="timeline-help">Double-click to split.<br>Double-click a cut to edit.</div>
         </div>
       </div>
       <canvas id="frameStrip" class="frame-strip" title="Frames near the current position. Click to seek, double-click to edit material"></canvas>
@@ -52,9 +53,9 @@
 
     <section id="workPane" class="area-pane" data-area="source">
       <div id="shelfPane" class="pane">
-        <div class="pane-head"><span>2 Materials</span><span class="spacer"></span><span id="shelfCount" class="time">0</span></div>
+        <div class="pane-head"><span>2 Cut Stock</span><span class="spacer"></span><span id="shelfCount" class="time">0</span></div>
         <div id="shelf" class="shelf">
-          <div class="placeholder">Create materials on the timeline</div>
+          <div class="placeholder">Split cuts on the timeline</div>
         </div>
       </div>
       <div class="pane-splitter" data-splitter="materials" title="Drag to resize materials"></div>
@@ -119,7 +120,7 @@
         <span id="totalDur" class="time">Total 0:00</span>
       </div>
       <div id="outList" class="out-list">
-        <div class="placeholder">Drag materials here to build the edit</div>
+        <div class="placeholder">Drag cut stock here to build the edit</div>
       </div>
       <div id="captionEditor" class="caption-editor">
         <div class="placeholder">Drop clips, then add captions here</div>
@@ -166,6 +167,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260711-sessions"></script>
+  <script type="module" src="js/app.js?v=20260711-overview"></script>
 </body>
 </html>

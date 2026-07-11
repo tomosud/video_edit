@@ -116,7 +116,23 @@ export async function clearSessionMedia(sessionId) {
   await deleteSessionMedia(sessionId);
 }
 
-export async function pruneSessions(max = 5) {
+export async function estimateSessionBytes(sessionId) {
+  const [session, history, mediaKeys] = await Promise.all([
+    loadSession(sessionId).catch(() => null),
+    loadSessionHistory(sessionId).catch(() => null),
+    keys('sessionMedia').catch(() => []),
+  ]);
+  let bytes = jsonBytes(session) + jsonBytes(history);
+  const prefix = `${sessionId}:`;
+  for (const key of mediaKeys) {
+    if (!String(key).startsWith(prefix)) continue;
+    const file = await get('sessionMedia', key).catch(() => null);
+    bytes += Number(file?.size || 0);
+  }
+  return bytes;
+}
+
+export async function pruneSessions(max = 15) {
   const sessions = await listSessions();
   await Promise.all(sessions.slice(max).map(s => deleteSession(s.id)));
 }
@@ -129,5 +145,14 @@ async function deleteSessionMedia(sessionId) {
 
 function mediaKey(sessionId, sourceId) {
   return `${sessionId}:${sourceId}`;
+}
+
+function jsonBytes(value) {
+  if (!value) return 0;
+  try {
+    return new Blob([JSON.stringify(value)]).size;
+  } catch {
+    return 0;
+  }
 }
 

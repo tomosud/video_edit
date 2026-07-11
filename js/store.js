@@ -3,6 +3,7 @@ import * as db from './db.js?v=20260711-sessions';
 
 const HISTORY_LIMIT = 100;
 const AUTOSAVE_DEBOUNCE = 500;
+const SESSION_LIMIT = 15;
 
 function emptyProject() {
   return {
@@ -38,6 +39,7 @@ class Store {
     this.project = emptyProject();
     this.ui = emptyUI();
     this.sessionId = null;
+    this._sessionMetaProvider = () => ({});
     this._subs = new Set();
     this._undo = [];
     this._redo = [];
@@ -55,6 +57,7 @@ class Store {
   getOutput(id) { return this.project.outputs.find(o => o.id === id); }
   activeSource() { return this.getSource(this.ui.activeSourceId); }
   setSessionId(id) { this.sessionId = id || null; }
+  setSessionMetaProvider(fn) { this._sessionMetaProvider = typeof fn === 'function' ? fn : () => ({}); }
 
   // resolve a selection (or any {kind,id}) to {source, in, out, crop, material, output}
   resolve(sel = this.ui.selection) {
@@ -133,31 +136,32 @@ class Store {
   // ---- IndexedDB persistence ----
   _scheduleSave() {
     clearTimeout(this._saveTimer);
-    if (!this.sessionId || !this.project.sources.length) return;
+    if (!this.shouldPersistSession()) return;
     this._saveTimer = setTimeout(() => {
       const now = Date.now();
-      db.saveSession(this.sessionId, {
-        project: this.project,
-        ui: persistableUI(this.ui),
-        savedAt: now,
-        updatedAt: now,
-        name: sessionName(this.project),
-        sourceCount: this.project.sources.length,
-        materialCount: this.project.materials.length,
-        outputCount: this.project.outputs.length,
-      }).then(() => db.pruneSessions(5)).catch((err) => console.warn('session save failed', err));
+      db.saveSession(this.sessionId, this.sessionPayload(now)).then(() => db.pruneSessions(SESSION_LIMIT)).catch((err) => console.warn('session save failed', err));
     }, AUTOSAVE_DEBOUNCE);
   }
   _persistHistory() {
-    if (!this.sessionId || !this.project.sources.length) return;
+    if (!this.shouldPersistSession()) return;
     db.saveSessionHistory(this.sessionId, this.historyState()).catch(() => {});
   }
 
   async flushSave() {
     clearTimeout(this._saveTimer);
-    if (!this.sessionId || !this.project.sources.length) return;
+    if (!this.shouldPersistSession()) return;
     const now = Date.now();
-    await db.saveSession(this.sessionId, {
+    await db.saveSession(this.sessionId, this.sessionPayload(now));
+    await db.saveSessionHistory(this.sessionId, this.historyState()).catch(() => {});
+    await db.pruneSessions(SESSION_LIMIT).catch(() => {});
+  }
+
+  shouldPersistSession() {
+    return !!(this.sessionId && this.project.materials.length);
+  }
+
+  sessionPayload(now = Date.now()) {
+    return {
       project: this.project,
       ui: persistableUI(this.ui),
       savedAt: now,
@@ -166,9 +170,8 @@ class Store {
       sourceCount: this.project.sources.length,
       materialCount: this.project.materials.length,
       outputCount: this.project.outputs.length,
-    });
-    await db.saveSessionHistory(this.sessionId, this.historyState()).catch(() => {});
-    await db.pruneSessions(5).catch(() => {});
+      ...(this._sessionMetaProvider() || {}),
+    };
   }
 
   historyState() {
