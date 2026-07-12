@@ -12,15 +12,11 @@ Cut out the parts you want, arrange them, and export vertical (9:16) and horizon
 
 Your videos never leave your computer.
 
+## 使い方
 
 https://github.com/user-attachments/assets/953d0831-4a85-46a3-9171-0978622b70f7
 
 
-
-<img width="1915" height="951" alt="image" src="https://github.com/user-attachments/assets/90c6eda1-7708-480c-a4f0-5a37afa880f0" />
-
-
-## 使い方
 
 1. `Add Video` で動画を追加(ボタンへのドロップも可)
 2. `1 Cut / Split` タイムラインの空白をダブルクリックしてカットを作成、ドラッグで範囲調整
@@ -36,6 +32,8 @@ https://github.com/user-attachments/assets/953d0831-4a85-46a3-9171-0978622b70f7
 4. Double-click the caption lane in `3 Edit` to add a caption, double-click it again to type
 5. Double-click a preview to adjust its vertical / horizontal crop
 6. `ExportVideo` to export MP4 (vertical, horizontal, or both)
+
+<img width="1915" height="951" alt="image" src="https://github.com/user-attachments/assets/90c6eda1-7708-480c-a4f0-5a37afa880f0" />
 
 ## 注意 / Notes
 
