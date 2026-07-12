@@ -35,8 +35,10 @@ let sequence = null;
 let transportRaf = 0;
 let sequenceAdvancing = false;
 let activeArea = 'timeline';
+let previewContext = 'source';
 const SESSION_LIMIT = 15;
 let sourcePickerOpen = false;
+let workspaceLayoutManual = false;
 const sourceThumbs = new Map();
 const sourceThumbBusy = new Set();
 
@@ -47,17 +49,18 @@ function init() {
     .then(rs => rs.forEach(r => r.unregister()))
     .catch(() => { /* ignore */ });
 
-  cropPreview.init(el.vertCanvas, el.srcVideo);
-  horizontalPreview.init(el.horizCanvas, el.srcVideo);
+  cropPreview.init(el.vertCanvas, el.srcVideo, { previewMode: currentPreviewMode });
+  horizontalPreview.init(el.horizCanvas, el.srcVideo, { previewMode: currentPreviewMode });
   srcTimeline.init({
     scroll: el.tlScroll, inner: el.tlInner, thumbRow: el.thumbRow,
     bands: el.clipBands, playhead: el.tlPlayhead, range: el.srcRange,
     overview: el.tlOverview, ovThumbRow: el.ovThumbRow, ovClips: el.ovClips, ovWindow: el.ovWindow, ovPlayhead: el.ovPlayhead,
   }, el.srcVideo);
-  frameStrip.init(el.frameStrip, el.srcVideo);
+  frameStrip.init(el.frameStrip, el.srcVideo, { sourcePreview: activateSourcePreview });
   shelf.init({ shelf: el.shelf, count: el.shelfCount }, { play: playRange });
   outSeq.init({ list: el.outList, captionEditor: el.captionEditor, total: el.totalDur, video: el.srcVideo }, { play: playOutputFrom, seek: seekOutputTime });
   srcTimeline.onPlayRange(playRange);
+  srcTimeline.onSourcePreview(activateSourcePreview);
   store.setSessionMetaProvider(sessionMeta);
   // Autosave failures (quota, blocked storage) must be visible: the user
   // otherwise closes the tab believing the session can be restored.
@@ -121,7 +124,10 @@ function wireMenu() {
   el.btnUndo.onclick = () => store.undo();
   el.btnRedo.onclick = () => store.redo();
   el.btnExport.onclick = guard(doExport);
-  el.sourceSelect.onchange = () => store.setUI({ activeSourceId: el.sourceSelect.value });
+  el.sourceSelect.onchange = () => {
+    setPreviewContext('source');
+    store.setUI({ activeSourceId: el.sourceSelect.value });
+  };
 }
 
 function wireSourcePicker() {
@@ -235,6 +241,10 @@ function wireVideoDrop() {
 // ---------- transport / ranged playback ----------
 function wireTransport() {
   el.btnPlay.onclick = () => {
+    if (!store.ui.playRange) {
+      setPreviewContext('source');
+      exitCropEdit();
+    }
     stopSequence();
     if (el.srcVideo.paused) el.srcVideo.play();
     else el.srcVideo.pause();
@@ -262,7 +272,9 @@ function wireTransport() {
 
 function playRange(a, b, mode = 'cut') {
   stopSequence();
-  store.ui.playRange = { start: a, end: b, mode };
+  const previewMode = mode === 'source' ? 'source' : 'stock';
+  setPreviewContext(previewMode);
+  store.ui.playRange = { start: a, end: b, mode: previewMode };
   renderSeekDecor();
   updatePlayInfo();
   seekTo(a, () => el.srcVideo.play());
@@ -372,6 +384,8 @@ function outputPlaybackItems() {
 function playOutputsFromIndex(startIndex) {
   const items = outputPlaybackItems();
   if (!items.length) return;
+  setPreviewContext('edit');
+  exitCropEdit();
   store.ui.playRange = null;
   sequence = { items, i: Math.min(Math.max(0, startIndex || 0), items.length - 1), mode: 'native' };
   sequenceAdvancing = false;
@@ -383,6 +397,8 @@ function playOutputsFromIndex(startIndex) {
 function seekOutputTime(sequenceSeconds, { previewOnly = false } = {}) {
   const items = outputPlaybackItems();
   if (!items.length) return;
+  setPreviewContext('edit');
+  exitCropEdit();
   const target = Math.max(0, sequenceSeconds || 0);
   let cursor = 0;
   let index = items.length - 1;
@@ -420,6 +436,7 @@ function seekOutputTime(sequenceSeconds, { previewOnly = false } = {}) {
 
 function playSequenceItem() {
   if (!sequence) return;
+  setPreviewContext('edit');
   const it = sequence.items[sequence.i];
   store.ui._fromSequence = true;
   store.select('output', it.outputId);
@@ -475,8 +492,51 @@ function sequenceClock() {
   return { at: before + local, total };
 }
 
+function setPreviewContext(mode) {
+  previewContext = mode === 'edit' || mode === 'stock' || mode === 'source' ? mode : 'source';
+}
+
+function currentPreviewMode() {
+  if (cropEditingActive()) return 'stock';
+  return previewContext;
+}
+
+function activateSourcePreview() {
+  setPreviewContext('source');
+  exitCropEdit();
+  store.ui.playRange = null;
+  renderSeekDecor();
+  if (sequence) stopSequence();
+  else updatePlayInfo();
+}
+
+function cropEditingActive() {
+  return !!(store.ui.cropEditActive || store.ui.horizontalCropEditActive);
+}
+
+function exitCropEdit() {
+  if (!cropEditingActive()) return;
+  store.setUI({ cropEditActive: false, horizontalCropEditActive: false });
+}
+
+function selectionPreviewMode() {
+  const sel = store.ui.selection;
+  if (sel.kind === 'material') return 'stock';
+  if (sel.kind === 'output') return 'edit';
+  return null;
+}
+
+function idlePreviewMode() {
+  if (previewContext === 'edit' || previewContext === 'stock' || previewContext === 'source') return previewContext;
+  return selectionPreviewMode() || (activeArea === 'edit' ? 'edit' : 'source');
+}
+
 function updatePlayInfo() {
   if (!el.playInfo) return;
+  if (cropEditingActive()) {
+    setPreviewState('stock', 'Cut crop ' + fmtTime(el.srcVideo.currentTime || 0));
+    return;
+  }
   if (sequence) {
     const clock = sequenceClock();
     setPreviewState('edit', `${el.srcVideo.paused ? 'Edit paused' : 'Edit playing'} ${fmtTime(clock.at)} / ${fmtTime(clock.total)}`);
@@ -485,32 +545,35 @@ function updatePlayInfo() {
   const r = store.ui.playRange;
   if (r) {
     const at = Math.max(0, Math.min(Math.max(0, r.end - r.start), (el.srcVideo.currentTime || r.start) - r.start));
-    const mode = r.mode === 'stock' ? 'stock' : 'cut';
-    const label = mode === 'stock' ? 'Stock cut' : 'Cut range';
+    const mode = r.mode === 'source' ? 'source' : 'stock';
+    const label = mode === 'source' ? 'Source range' : 'Stock cut';
     setPreviewState(mode, `${el.srcVideo.paused ? label + ' paused' : label} ${fmtTime(at)} / ${fmtTime(Math.max(0, r.end - r.start))}`);
     return;
   }
   if (!el.srcVideo.paused && el.srcVideo.currentTime > 0) {
-    const mode = activeArea === 'edit' ? 'edit' : 'source';
-    setPreviewState(mode, `${activeArea === 'edit' ? 'Edit preview' : 'Source playing'} ${fmtTime(el.srcVideo.currentTime)}`);
+    const mode = idlePreviewMode();
+    const label = mode === 'edit' ? 'Edit preview' : mode === 'stock' ? 'Cut preview' : 'Source playing';
+    setPreviewState(mode, `${label} ${fmtTime(el.srcVideo.currentTime)}`);
     return;
   }
-  const editingCut = activeArea === 'timeline' || !!store.ui.editMaterialId || !!store.ui.editMaterialIds?.length;
-  if (activeArea === 'edit') {
+  const mode = idlePreviewMode();
+  if (mode === 'edit') {
     setPreviewState('edit', 'Edit ready');
-  } else if (editingCut) {
-    setPreviewState('source', 'Cut / Split ready');
+  } else if (mode === 'stock') {
+    setPreviewState('stock', 'Cut ready');
   } else {
-    setPreviewState('idle', 'Source ready');
+    setPreviewState(store.activeSource() ? 'source' : 'idle', 'Source ready');
   }
 }
 
 function setPreviewState(mode, text) {
+  const prevMode = el.origPane?.dataset.previewMode;
   el.playInfo.dataset.mode = mode;
   el.playInfo.textContent = text;
   for (const pane of [el.origPane, el.vertPane]) {
     if (pane) pane.dataset.previewMode = mode;
   }
+  if (mode !== prevMode) requestAnimationFrame(() => { cropPreview.refresh(); horizontalPreview.refresh(); });
 }
 
 function ensureSource(sourceId, cb) {
@@ -561,14 +624,15 @@ function wireSeek() {
     if (!el.srcVideo.duration) return;
     dragging = true;
     try { bar.setPointerCapture(e.pointerId); } catch { /* ignore */ }
-    stopSequence(); store.ui.playRange = null;
+    activateSourcePreview();
     seekScrub(probeTimeOf(tAt(e.clientX))); updateSeek();
   });
-  bar.addEventListener('pointermove', (e) => { if (dragging) { seekScrub(probeTimeOf(tAt(e.clientX))); updateSeek(e.clientX); } });
+  bar.addEventListener('pointermove', (e) => { if (dragging) { activateSourcePreview(); seekScrub(probeTimeOf(tAt(e.clientX))); updateSeek(e.clientX); } });
   bar.addEventListener('pointerup', (e) => {
     if (!dragging) return;
     dragging = false;
     try { bar.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    activateSourcePreview();
     seekTo(tAt(e.clientX));
   });
 
@@ -672,12 +736,30 @@ function wireCrop() {
 
   el.vertPane.addEventListener('dblclick', (e) => {
     e.preventDefault();
-    store.setUI({ cropEditActive: !store.ui.cropEditActive });
+    const mode = el.vertPane.dataset.previewMode;
+    if (mode !== 'stock' && mode !== 'edit') return;
+    const next = !store.ui.cropEditActive;
+    if (next) {
+      setPreviewContext('stock');
+      if (sequence) stopSequence();
+      store.ui.playRange = null;
+    }
+    store.setUI({ cropEditActive: next });
+    updatePlayInfo();
     requestAnimationFrame(() => cropPreview.refresh());
   });
   el.origPane.addEventListener('dblclick', (e) => {
     e.preventDefault();
-    store.setUI({ horizontalCropEditActive: !store.ui.horizontalCropEditActive });
+    const mode = el.origPane.dataset.previewMode;
+    if (mode !== 'stock' && mode !== 'edit') return;
+    const next = !store.ui.horizontalCropEditActive;
+    if (next) {
+      setPreviewContext('stock');
+      if (sequence) stopSequence();
+      store.ui.playRange = null;
+    }
+    store.setUI({ horizontalCropEditActive: next });
+    updatePlayInfo();
     requestAnimationFrame(() => horizontalPreview.refresh());
   });
 }
@@ -688,6 +770,11 @@ function wireAreas() {
   const setArea = (area) => {
     if (!area) return;
     activeArea = area;
+    if (area === 'edit') {
+      setPreviewContext('edit');
+    } else if (!selectionPreviewMode()) {
+      setPreviewContext('source');
+    }
     const patch = {};
     if (area !== 'source') {
       if (store.ui.cropEditActive) patch.cropEditActive = false;
@@ -714,9 +801,35 @@ function wireWorkspaceSplitters() {
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
   let drag = null;
 
+  const fitMonitorColumns = () => {
+    if (workspaceLayoutManual || !el.workPane || !el.origPane || !el.vertPane) return;
+    const rect = el.workPane.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const headH = el.origPane.querySelector('.pane-head')?.getBoundingClientRect().height || 32;
+    const contentH = Math.max(120, rect.height - headH);
+    const splittersW = 12;
+    const available = Math.max(0, rect.width - splittersW);
+    const minMaterials = 160;
+    const minHorizontal = 340;
+    const minVertical = 150;
+    const idealHorizontal = Math.ceil(contentH * 16 / 9) + 2;
+    const idealVertical = Math.ceil(contentH * 9 / 16) + 2;
+    const verticalMax = Math.max(minVertical, available - minMaterials - minHorizontal);
+    const vertical = clamp(idealVertical, minVertical, verticalMax);
+    const horizontalMax = Math.max(minHorizontal, available - minMaterials - vertical);
+    const horizontal = clamp(idealHorizontal, minHorizontal, horizontalMax);
+    const materials = Math.max(minMaterials, available - horizontal - vertical);
+    el.workPane.style.setProperty('--materials-col', Math.round(materials) + 'px');
+    el.workPane.style.setProperty('--vertical-col', Math.round(vertical) + 'px');
+  };
+
+  requestAnimationFrame(fitMonitorColumns);
+  window.addEventListener('resize', fitMonitorColumns);
+
   for (const splitter of splitters) {
     splitter.addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      workspaceLayoutManual = true;
       const rect = el.workPane.getBoundingClientRect();
       drag = {
         el: splitter,
@@ -913,7 +1026,7 @@ async function withSessionSizes(sessions) {
 function sessionBrightness(index, count) {
   if (count <= 1) return '1';
   const t = Math.max(0, Math.min(1, index / Math.max(1, count - 1)));
-  return (1 - t * 0.8).toFixed(2);
+  return (1 - t * 0.5).toFixed(2);
 }
 
 async function storageUsageText() {
@@ -1110,6 +1223,7 @@ function renderSourcePicker(project, ui) {
     row.onclick = (e) => {
       e.stopPropagation();
       sourcePickerOpen = false;
+      setPreviewContext('source');
       store.setUI({ activeSourceId: source.id });
     };
     list.appendChild(row);
@@ -1205,13 +1319,22 @@ function applySelection() {
   const fromTL = store.ui._fromTimeline;
   store.ui._fromTimeline = false;
   const r = store.resolve();
-  if (!r || !r.source) return;
+  if (!r || !r.source) {
+    if (activeArea !== 'edit') setPreviewContext('source');
+    updatePlayInfo();
+    return;
+  }
+  const mode = store.ui.selection.kind === 'output' ? 'edit' : 'stock';
+  setPreviewContext(mode);
+  store.ui.playRange = null;
+  if (mode === 'stock' && sequence) stopSequence();
   if (r.source.id !== store.ui.activeSourceId) {
     pendingSeek = r.in;
     queueMicrotask(() => store.setUI({ activeSourceId: r.source.id }));
   } else {
     seekTo(r.in);
   }
+  updatePlayInfo();
   // focus the view to the clip only for shelf/output navigation, not timeline clicks
   // (timeline view should change via wheel/right-drag only)
   if (!fromTL && r.material) queueMicrotask(() => srcTimeline.focusMaterial(r.material));

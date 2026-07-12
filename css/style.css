@@ -48,7 +48,7 @@ video {
 #app {
   height: 100vh;
   display: grid;
-  grid-template-rows: 50px minmax(128px, .72fr) minmax(280px, 1.78fr) minmax(142px, .72fr);
+  grid-template-rows: 50px 220px minmax(0, 1fr) 210px;
   gap: 8px;
   padding: 8px;
 }
@@ -398,10 +398,10 @@ video {
   touch-action: none;
 }
 .timeline-help {
-  position: absolute;
-  left: 50%;
-  bottom: 8px;
-  transform: translateX(-50%);
+  position: fixed;
+  left: 0;
+  top: 0;
+  transform: none;
   z-index: 7;
   padding: 5px 8px;
   border-radius: 5px;
@@ -414,8 +414,27 @@ video {
   pointer-events: none;
   transition: opacity .12s;
   white-space: nowrap;
+  border: 1px solid rgba(255,255,255,.18);
 }
-.tl-scroll:hover .timeline-help { opacity: 1; }
+.tl-scroll[data-help]:hover .timeline-help { opacity: 1; }
+.tl-scroll[data-help="create"] .timeline-help {
+  background: rgb(var(--area-stock-rgb) / .86);
+  color: #071018;
+  border-color: rgb(var(--area-stock-rgb) / .96);
+  box-shadow: 0 0 10px rgb(var(--area-stock-rgb) / .38);
+}
+.tl-scroll[data-help="edit"] .timeline-help {
+  background: rgba(84, 13, 27, .86);
+  color: #ffe3e8;
+  border-color: rgba(255,68,92,.8);
+  box-shadow: 0 0 10px rgba(255,68,92,.42);
+}
+.tl-scroll[data-help="finish"] .timeline-help {
+  background: rgb(var(--area-cut-rgb) / .86);
+  color: #071018;
+  border-color: rgb(var(--area-cut-rgb) / .96);
+  box-shadow: 0 0 10px rgb(var(--area-cut-rgb) / .38);
+}
 #srcPane.no-cuts .tl-scroll {
   animation: cutFramePulse 1s ease-in-out infinite;
 }
@@ -436,9 +455,9 @@ video {
 }
 .clip-band.selected { background: rgb(var(--area-cut-rgb) / .24); border-color: var(--area-cut); z-index: 3; }
 .clip-band.editing {
-  background: rgb(var(--area-cut-rgb) / .28);
-  border-color: var(--area-cut);
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,.7), 0 0 0 1px rgb(var(--area-cut-rgb) / .72);
+  background: rgba(255, 68, 92, .24);
+  border-color: #ff445c;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.7), 0 0 0 1px rgba(255,68,92,.72);
   cursor: grab;
 }
 .clip-band.editing::after {
@@ -447,8 +466,8 @@ video {
   transform: translate(-50%, -50%);
   padding: 1px 5px;
   border-radius: 4px;
-  background: rgba(15,35,70,.78);
-  color: #dbe9ff;
+  background: rgba(84, 13, 27, .84);
+  color: #ffe3e8;
   font-size: 11px;
   font-weight: 700;
   pointer-events: none;
@@ -466,6 +485,8 @@ video {
 .clip-band .h.r,
 .clip-band.selected .h.r,
 .clip-band.editing .h.r { right: -2px; background: linear-gradient(270deg, var(--area-cut), transparent); border-radius: 0 4px 4px 0; }
+.clip-band.editing .h.l { background: linear-gradient(90deg, #ff445c, transparent); }
+.clip-band.editing .h.r { background: linear-gradient(270deg, #ff445c, transparent); }
 .clip-band .lbl {
   position: absolute; top: 2px; left: 6px; font-size: 11px; color: #fff;
   text-shadow: 0 1px 2px #000; pointer-events: none; white-space: nowrap;
@@ -521,12 +542,37 @@ video {
   box-shadow: 0 0 0 1px rgba(0,0,0,.78), 0 0 8px rgb(var(--area-cut-rgb) / .75), inset 0 0 0 1px rgba(255,255,255,.15);
   opacity: 1;
 }
+.ov-clip.editing {
+  background: rgba(255, 68, 92, .32);
+  border-color: #ff445c;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.78), 0 0 8px rgba(255,68,92,.72), inset 0 0 0 1px rgba(255,255,255,.12);
+}
 .ov-window {
   position: absolute; top: 3px; bottom: 3px; min-width: 2px;
   background: rgba(210,226,255,.16);
   border: 2px solid rgba(235,244,255,.98);
   border-radius: 3px; pointer-events: none; z-index: 3;
   box-shadow: inset 0 0 0 1px rgba(0,0,0,.72), 0 0 10px rgba(180,210,255,.62);
+}
+.ov-window::after {
+  content: attr(data-span);
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(7, 14, 24, .78);
+  color: #f5f8ff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.18), 0 1px 5px rgba(0,0,0,.45);
+}
+.ov-window.label-left::after {
+  left: auto;
+  right: calc(100% + 6px);
 }
 .ov-playhead {
   position: absolute; top: 0; bottom: 0; width: 3px;
@@ -678,11 +724,11 @@ video {
   pointer-events: none;
 }
 #origPane.crop-editing {
-  box-shadow: inset 0 0 0 1px rgba(255,182,72,.65);
+  box-shadow: inset 0 0 0 1px rgb(var(--area-stock-rgb) / .65);
 }
 #vertPane { min-width: 0; }
 #vertPane.crop-editing {
-  box-shadow: inset 0 0 0 1px rgba(255,182,72,.65);
+  box-shadow: inset 0 0 0 1px rgb(var(--area-stock-rgb) / .65);
 }
 #vertCanvas, #horizCanvas { height: 100%; max-width: 100%; background: #000; display: block; }
 .crop-hover-target:not(.crop-editing) .video-wrap::after,
@@ -694,7 +740,7 @@ video {
   padding: 4px 8px;
   border-radius: 5px;
   background: rgba(0,0,0,.72);
-  color: #dbe3f3;
+  color: var(--area-stock);
   font-size: 11px;
   opacity: 0;
   pointer-events: none;
@@ -703,6 +749,14 @@ video {
 .crop-hover-target:not(.crop-editing):hover .video-wrap::after,
 .crop-hover-target:not(.crop-editing):hover .preview-wrap::after {
   opacity: 1;
+}
+/* hide crop tooltip and hint when crop editing is not applicable */
+.preview-monitor:not([data-preview-mode="stock"]):not([data-preview-mode="edit"]).crop-hover-target .video-wrap::after,
+.preview-monitor:not([data-preview-mode="stock"]):not([data-preview-mode="edit"]).crop-hover-target .preview-wrap::after {
+  display: none;
+}
+.preview-monitor:not([data-preview-mode="stock"]):not([data-preview-mode="edit"]) .crop-edit-hint {
+  display: none;
 }
 .transport, .crop-controls {
   display: flex; align-items: center; gap: 8px; padding: 8px 12px;
@@ -1300,7 +1354,7 @@ video {
 }
 @media (max-height: 760px) {
   #app {
-    grid-template-rows: 42px minmax(104px, .55fr) minmax(260px, 1.95fr) minmax(116px, .5fr);
+    grid-template-rows: 42px 180px minmax(0, 1fr) 170px;
     gap: 5px;
     padding: 6px;
   }

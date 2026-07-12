@@ -5,11 +5,13 @@ import { drawHorizontalFrame } from './drawing.js';
 
 let canvas, ctx, video;
 let raf = 0;
+let previewMode = () => 'source';
 
-export function init(canvasEl, videoEl) {
+export function init(canvasEl, videoEl, hooks = {}) {
   canvas = canvasEl;
   ctx = canvas.getContext('2d');
   video = videoEl;
+  previewMode = typeof hooks.previewMode === 'function' ? hooks.previewMode : () => 'source';
   resize();
   window.addEventListener('resize', () => { resize(); draw(); });
   video.addEventListener('play', startLoop);
@@ -44,6 +46,7 @@ function resize() {
 }
 
 function currentCrop() {
+  if (previewMode() === 'source') return { panX: 0.5, panY: 0.5, zoom: 1, bgBlur: 1 };
   const r = store.resolve() || resolveSelectedCaption();
   return r?.material?.horizontalCrop || store.ui.horizontalCrop || { panX: 0.5, panY: 0.5, zoom: 1, bgBlur: 1 };
 }
@@ -59,7 +62,7 @@ function draw() {
   ctx.clearRect(0, 0, W, H);
   if (!video || video.readyState < 2 || !video.videoWidth) return;
   drawHorizontalFrame(ctx, video, W, H, currentCrop());
-  const text = previewCaptionText(store.get(), store.ui, video.currentTime);
+  const text = previewMode() === 'source' ? '' : previewCaptionText(store.get(), store.ui, video.currentTime);
   if (text) drawCaption(ctx, W, H, text);
 }
 

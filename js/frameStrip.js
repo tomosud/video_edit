@@ -12,14 +12,16 @@ let raf = 0;
 let generation = 0;
 let lastSignature = '';
 let gesture = null;
+let onSourcePreview = () => {};
 const cache = new Map(); // key -> HTMLCanvasElement
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-export function init(canvasEl, videoEl) {
+export function init(canvasEl, videoEl, hooks = {}) {
   canvas = canvasEl;
   ctx = canvas.getContext('2d');
   video = videoEl;
+  onSourcePreview = typeof hooks.sourcePreview === 'function' ? hooks.sourcePreview : () => {};
 
   canvas.addEventListener('pointerdown', onPointerDown);
   canvas.addEventListener('dblclick', onDoubleClick);
@@ -330,6 +332,7 @@ function onPointerDown(e) {
     return;
   }
   gesture = { type: 'seek' };
+  onSourcePreview();
   store.select(null, null);
   seekFrame(frame);
 }
@@ -349,6 +352,7 @@ function onDoubleClick(e) {
   }
   if (editingIds().size) {
     setEditingMaterials([]);
+    onSourcePreview();
     seekFrame(frame);
     return;
   }

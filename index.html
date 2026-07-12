@@ -12,28 +12,28 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/store.js":                   "./js/store.js?v=20260712f",
-      "./js/db.js":                      "./js/db.js?v=20260712f",
-      "./js/util.js":                    "./js/util.js?v=20260712f",
-      "./js/fileOpen.js":                "./js/fileOpen.js?v=20260712f",
-      "./js/mediaInfo.js":               "./js/mediaInfo.js?v=20260712f",
-      "./js/mediaSession.js":            "./js/mediaSession.js?v=20260712f",
-      "./js/mediabunny.js":              "./js/mediabunny.js?v=20260712f",
-      "./js/thumbnails.js":              "./js/thumbnails.js?v=20260712f",
-      "./js/sourceTimeline.js":          "./js/sourceTimeline.js?v=20260712f",
-      "./js/frameStrip.js":              "./js/frameStrip.js?v=20260712f",
-      "./js/materialShelf.js":           "./js/materialShelf.js?v=20260712f",
-      "./js/outputSequenceTimeline.js":  "./js/outputSequenceTimeline.js?v=20260712f",
-      "./js/captions.js":                "./js/captions.js?v=20260712f",
-      "./js/drawing.js":                 "./js/drawing.js?v=20260712f",
-      "./js/cropPreview.js":             "./js/cropPreview.js?v=20260712f",
-      "./js/horizontalPreview.js":       "./js/horizontalPreview.js?v=20260712f",
-      "./js/export.js":                  "./js/export.js?v=20260712f",
+      "./js/store.js":                   "./js/store.js?v=20260712s",
+      "./js/db.js":                      "./js/db.js?v=20260712s",
+      "./js/util.js":                    "./js/util.js?v=20260712s",
+      "./js/fileOpen.js":                "./js/fileOpen.js?v=20260712s",
+      "./js/mediaInfo.js":               "./js/mediaInfo.js?v=20260712s",
+      "./js/mediaSession.js":            "./js/mediaSession.js?v=20260712s",
+      "./js/mediabunny.js":              "./js/mediabunny.js?v=20260712s",
+      "./js/thumbnails.js":              "./js/thumbnails.js?v=20260712s",
+      "./js/sourceTimeline.js":          "./js/sourceTimeline.js?v=20260712s",
+      "./js/frameStrip.js":              "./js/frameStrip.js?v=20260712s",
+      "./js/materialShelf.js":           "./js/materialShelf.js?v=20260712s",
+      "./js/outputSequenceTimeline.js":  "./js/outputSequenceTimeline.js?v=20260712s",
+      "./js/captions.js":                "./js/captions.js?v=20260712s",
+      "./js/drawing.js":                 "./js/drawing.js?v=20260712s",
+      "./js/cropPreview.js":             "./js/cropPreview.js?v=20260712s",
+      "./js/horizontalPreview.js":       "./js/horizontalPreview.js?v=20260712s",
+      "./js/export.js":                  "./js/export.js?v=20260712s",
       "./lib/mediabunny.min.js":         "./lib/mediabunny.min.js?v=mb-1"
     }
   }
   </script>
-  <link rel="stylesheet" href="css/style.css?v=20260712f">
+  <link rel="stylesheet" href="css/style.css?v=20260712s">
 </head>
 <body>
   <div id="app">
@@ -41,7 +41,7 @@
     <header id="menu">
       <span class="brand">ViralCut</span>
       <a class="repo-link" href="https://github.com/tomosud/video_edit" target="_blank" rel="noopener">GitHub</a>
-      <button id="btnNewProject" class="btn">🗂 Sessions</button>
+      <button id="btnNewProject" class="btn">🗂 New/Sessions</button>
       <span class="sep"></span>
       <button id="btnAddVideo" class="btn" title="Click or drop video files here">＋🎬 Add Video</button>
       <select id="sourceSelect" class="sel" disabled></select>
@@ -62,7 +62,7 @@
         <span class="spacer"></span>
         <span id="srcRange" class="time">-</span>
       </div>
-      <div id="tlOverview" class="tl-overview" title="Full overview. Click or drag to move the visible range">
+      <div id="tlOverview" class="tl-overview" title="Full overview. Wheel to zoom, click or drag to move the visible range">
         <div id="ovThumbRow" class="ov-thumb-row"></div>
         <div id="ovClips" class="ov-clips"></div>
         <div id="ovWindow" class="ov-window"></div>
@@ -73,7 +73,7 @@
           <div id="thumbRow" class="thumb-row"></div>
           <div id="clipBands" class="clip-bands"></div>
           <div id="tlPlayhead" class="playhead"></div>
-          <div class="timeline-help">Double-click to split.<br>Double-click a cut to edit.</div>
+          <div class="timeline-help">Double-click to create a cut</div>
         </div>
       </div>
       <canvas id="frameStrip" class="frame-strip" title="Frames near the current position. Click to seek, double-click to edit material"></canvas>
@@ -195,6 +195,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260712f"></script>
+  <script type="module" src="js/app.js?v=20260712s"></script>
 </body>
 </html>

@@ -11,18 +11,29 @@ let curSourceId = null;
 let duration = 0;
 let fps = 30;
 let regenTimer = 0;
+let thumbRetryTimer = 0;
+let overviewRetryTimer = 0;
+let thumbRetryCount = 0;
+let overviewRetryCount = 0;
 let renderToken = { cancelled: false };
 let overviewToken = { cancelled: false };
 let renderedWin = null;          // window the current thumbnail DOM was built for
 let scrub = () => {};            // fast scrubber bound to the preview video
 let playRaf = 0;                 // rAF id for smooth playhead while playing
+let _sourcePreview = () => {};
+let overviewLayoutRaf = 0;
+let overviewResizeObserver = null;
 
 export function init(elements, videoEl) {
   els = elements;
+  els.help = els.scroll.querySelector('.timeline-help');
   video = videoEl;
   scrub = makeFrameScrubber(video, () => fps, () => duration);
+  setHelpTarget('create');
 
   els.scroll.addEventListener('wheel', onWheel, { passive: false });
+  els.scroll.addEventListener('mousemove', onHelpMove);
+  els.scroll.addEventListener('mouseleave', clearHelpTarget);
   els.inner.addEventListener('pointerdown', onInnerDown);
   els.inner.addEventListener('dblclick', onInnerDblClick);
   els.inner.addEventListener('contextmenu', (e) => e.preventDefault()); // allow right-drag pan
@@ -30,12 +41,23 @@ export function init(elements, videoEl) {
   els.playhead.addEventListener('dblclick', (e) => { e.stopPropagation(); onInnerDblClick(e); });
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
-  window.addEventListener('resize', () => { layout(); scheduleRegen(); scheduleOverviewRegen(); });
+  window.addEventListener('resize', onTimelineResize);
 
-  if (els.overview) els.overview.addEventListener('pointerdown', onOverviewDown);
+  if (window.ResizeObserver && els.overview) {
+    overviewResizeObserver = new ResizeObserver(onTimelineResize);
+    overviewResizeObserver.observe(els.overview);
+  }
+
+  if (els.overview) {
+    els.overview.addEventListener('pointerdown', onOverviewDown);
+    els.overview.addEventListener('wheel', onOverviewWheel, { passive: false });
+  }
 
   video.addEventListener('timeupdate', positionPlayhead);
   video.addEventListener('seeked', positionPlayhead);
+  video.addEventListener('loadedmetadata', onVideoReady);
+  video.addEventListener('loadeddata', onVideoReady);
+  video.addEventListener('canplay', onVideoReady);
   video.addEventListener('play', startPlayhead);
   video.addEventListener('pause', stopPlayhead);
   video.addEventListener('ended', stopPlayhead);
@@ -93,22 +115,106 @@ function onState(project, ui) {
     renderedWin = null;
     renderToken.cancelled = true;
     overviewToken.cancelled = true;
+    clearRetryTimers();
     clearTimeline();
     return;
   }
 
-  if (src.id !== curSourceId) {
+  const nextDuration = src.duration || 0;
+  const nextFps = src.fps || 30;
+  const sourceChanged = src.id !== curSourceId;
+  const mediaChanged = nextDuration !== duration || nextFps !== fps;
+
+  if (sourceChanged || mediaChanged) {
     curSourceId = src.id;
-    duration = src.duration || 0;
-    fps = src.fps || 30;
+    duration = nextDuration;
+    fps = nextFps;
     renderToken.cancelled = true;
     overviewToken.cancelled = true;
-    clearTimeline();
-    store.ui.view = { start: 0, end: duration || 1 };
-    regenNow();
-    regenOverviewNow();
+    resetThumbnailRetries();
+    if (sourceChanged) {
+      clearTimeline();
+      store.ui.view = { start: 0, end: duration || 1 };
+    } else if (!duration) {
+      clearTimeline();
+    }
+    if (duration) {
+      regenNow();
+      regenOverviewNow();
+      scheduleOverviewAfterLayout();
+    }
+  } else if (duration && els.ovThumbRow && !els.ovThumbRow.children.length) {
+    scheduleOverviewRegen();
   }
   layout();
+}
+
+function onTimelineResize() {
+  layout();
+  scheduleRegen();
+  scheduleOverviewRegen();
+}
+
+function onHelpMove(e) {
+  const overCut = !!e.target.closest('.clip-band');
+  const editing = editingIds().size > 0;
+  if (editing) {
+    setHelpTarget(overCut ? 'none' : 'finish');
+    positionHelp(e);
+    return;
+  }
+  setHelpTarget(overCut ? 'edit' : 'create');
+  positionHelp(e);
+}
+
+function clearHelpTarget() {
+  if (els.scroll) delete els.scroll.dataset.help;
+}
+
+function positionHelp(e) {
+  if (!els.help) return;
+  const margin = 6;
+  const gap = 62;
+  const w = els.help.offsetWidth || 160;
+  const h = els.help.offsetHeight || 26;
+  const rawX = e.clientX - w / 2;
+  const rawY = e.clientY + gap;
+  const x = Math.max(margin, Math.min(window.innerWidth - w - margin, rawX));
+  const y = Math.max(margin, Math.min(window.innerHeight - h - margin, rawY));
+  els.help.style.left = x + 'px';
+  els.help.style.top = y + 'px';
+}
+
+function setHelpTarget(target) {
+  if (!els.scroll || !els.help) return;
+  if (target === 'none') {
+    delete els.scroll.dataset.help;
+    els.help.textContent = '';
+    return;
+  }
+  els.scroll.dataset.help = target;
+  if (target === 'edit') els.help.textContent = 'Double-click to edit';
+  else if (target === 'finish') els.help.textContent = 'Double-click to finish editing';
+  else els.help.textContent = 'Double-click to create a cut';
+}
+
+function onVideoReady() {
+  resetThumbnailRetries();
+  scheduleRegen();
+  scheduleOverviewAfterLayout();
+}
+
+function clearRetryTimers() {
+  clearTimeout(thumbRetryTimer);
+  clearTimeout(overviewRetryTimer);
+  thumbRetryTimer = 0;
+  overviewRetryTimer = 0;
+}
+
+function resetThumbnailRetries() {
+  clearRetryTimers();
+  thumbRetryCount = 0;
+  overviewRetryCount = 0;
 }
 
 function clearTimeline() {
@@ -134,7 +240,11 @@ function onWheel(e) {
   if (!duration) return;
   e.preventDefault();
   const tc = clampT(xToTime(e.clientX));
-  const factor = Math.exp(e.deltaY * 0.0015);
+  zoomAt(tc, e.deltaY);
+}
+
+function zoomAt(tc, deltaY) {
+  const factor = Math.exp(deltaY * 0.0015);
   const minSpan = Math.max(2 / fps, 0.04);          // down to ~2 frames
   let newSpan = Math.min(duration, Math.max(minSpan, span() * factor));
   let start = tc - (tc - view().start) * (newSpan / span());
@@ -159,6 +269,7 @@ function onPlayheadDown(e) {
   e.stopPropagation();
   playheadDrag = true;
   try { els.playhead.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  _sourcePreview();
   store.setUI({ playRange: null });
   seekFromClientX(e.clientX);
 }
@@ -202,13 +313,14 @@ function onInnerDown(e) {
   }
 
   // left-click on empty area -> move preview/playhead without editing
+  _sourcePreview();
   store.select(null, null);
   gesture = null;
   seekFromClientX(e.clientX);
 }
 
 function onPointerMove(e) {
-  if (playheadDrag) { seekFromClientX(e.clientX); return; }
+  if (playheadDrag) { _sourcePreview(); seekFromClientX(e.clientX); return; }
   if (ovDrag) { overviewSeek(e); return; }
   if (!gesture) return;
 
@@ -299,6 +411,7 @@ function onInnerDblClick(e) {
   }
   if (editingIds().size) {
     setEditingMaterials([]);
+    _sourcePreview();
     seekFromClientX(e.clientX);
     return;
   }
@@ -346,6 +459,10 @@ async function regenNow() {
   renderedWin = { ...view() };
   els.thumbRow.style.transform = '';
   await generateWindow(src, view(), els.thumbRow, { fps, token: renderToken });
+  if (!renderToken.cancelled) {
+    if (rowHasThumbnails(els.thumbRow)) thumbRetryCount = 0;
+    else scheduleThumbRetry();
+  }
 }
 
 function scheduleOverviewRegen() {
@@ -354,13 +471,58 @@ function scheduleOverviewRegen() {
 }
 
 let overviewTimer = 0;
+function rowHasThumbnails(row) {
+  return !!row?.querySelector('canvas,img');
+}
+
+function scheduleThumbRetry() {
+  if (thumbRetryTimer || thumbRetryCount >= 6) return;
+  thumbRetryCount += 1;
+  thumbRetryTimer = setTimeout(() => {
+    thumbRetryTimer = 0;
+    if (duration) regenNow();
+  }, 350 + thumbRetryCount * 180);
+}
+
+function scheduleOverviewRetry() {
+  if (overviewRetryTimer || overviewRetryCount >= 6) return;
+  overviewRetryCount += 1;
+  overviewRetryTimer = setTimeout(() => {
+    overviewRetryTimer = 0;
+    if (duration) regenOverviewNow();
+  }, 350 + overviewRetryCount * 180);
+}
+
+function overviewWidth() {
+  const rowW = els.ovThumbRow?.getBoundingClientRect().width || 0;
+  const overviewW = els.overview?.getBoundingClientRect().width || 0;
+  return Math.max(rowW, overviewW);
+}
+
+function scheduleOverviewAfterLayout() {
+  if (overviewLayoutRaf) return;
+  overviewLayoutRaf = requestAnimationFrame(() => {
+    overviewLayoutRaf = 0;
+    if (!duration) return;
+    if (overviewWidth() > 1) scheduleOverviewRegen();
+  });
+}
+
 async function regenOverviewNow() {
   if (!els.ovThumbRow) return;
   const src = store.activeSource();
   if (!src || !duration) return;
+  if (overviewWidth() <= 1) {
+    scheduleOverviewAfterLayout();
+    return;
+  }
   overviewToken.cancelled = true;
   overviewToken = { cancelled: false };
   await generateWindow(src, { start: 0, end: duration || 1 }, els.ovThumbRow, { fps, token: overviewToken });
+  if (!overviewToken.cancelled) {
+    if (rowHasThumbnails(els.ovThumbRow)) overviewRetryCount = 0;
+    else scheduleOverviewRetry();
+  }
 }
 
 // While zooming/panning, instantly track the gesture by transforming the
@@ -443,15 +605,18 @@ function renderOverview() {
   if (!els.overview) return;
   if (!duration) { clearTimeline(); return; }
   const selMat = selectedMaterialId();
+  const editSet = editingIds();
   const mats = store.get().materials.filter(m => m.sourceId === curSourceId);
   els.ovClips.innerHTML = mats.map(m => {
     const l = m.in / duration * 100;
     const w = Math.max(0.4, (m.out - m.in) / duration * 100);
-    return `<div class="ov-clip${m.id === selMat ? ' selected' : ''}" style="left:${l}%;width:${w}%"></div>`;
+    return `<div class="ov-clip${m.id === selMat ? ' selected' : ''}${editSet.has(m.id) ? ' editing' : ''}" style="left:${l}%;width:${w}%"></div>`;
   }).join('');
   const v = view();
   els.ovWindow.style.left = (v.start / duration * 100) + '%';
   els.ovWindow.style.width = Math.max(0.5, (v.end - v.start) / duration * 100) + '%';
+  els.ovWindow.dataset.span = formatWindowSpan(v.end - v.start);
+  els.ovWindow.classList.toggle('label-left', v.end / duration > 0.82);
 }
 
 let ovDrag = false;
@@ -475,7 +640,25 @@ function overviewSeek(e) {
   scheduleRegen();
 }
 
+function onOverviewWheel(e) {
+  if (!duration) return;
+  e.preventDefault();
+  const rect = els.overview.getBoundingClientRect();
+  const f = Math.min(1, Math.max(0, (e.clientX - rect.left) / (rect.width || 1)));
+  zoomAt(f * duration, e.deltaY);
+}
+
+function formatWindowSpan(sec) {
+  sec = Math.max(0, sec || 0);
+  if (sec < 1) return `${Math.max(1, Math.round(sec * 1000))}ms`;
+  if (sec < 60) return `${Math.round(sec)}s`;
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return s ? `${m}m ${s}s` : `${m}m`;
+}
+
 // ---------- ranged playback hook (set by app) ----------
 let _playRange = () => {};
 export function onPlayRange(fn) { _playRange = fn; }
+export function onSourcePreview(fn) { _sourcePreview = typeof fn === 'function' ? fn : () => {}; }
 function playRange(a, b) { _playRange(a, b); }

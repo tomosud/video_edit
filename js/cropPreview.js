@@ -5,11 +5,13 @@ import { drawVerticalFrame } from './drawing.js';
 
 let canvas, ctx, video;
 let raf = 0;
+let previewMode = () => 'source';
 
-export function init(canvasEl, videoEl) {
+export function init(canvasEl, videoEl, hooks = {}) {
   canvas = canvasEl;
   ctx = canvas.getContext('2d');
   video = videoEl;
+  previewMode = typeof hooks.previewMode === 'function' ? hooks.previewMode : () => 'source';
   resize();
   window.addEventListener('resize', () => { resize(); draw(); });
 
@@ -48,6 +50,7 @@ function resize() {
 
 // crop config: selected output's crop if any, else the UI draft crop
 function currentCrop() {
+  if (previewMode() === 'source') return { panX: 0.5, panY: 0.5, zoom: 1, bgBlur: 1 };
   const r = store.resolve() || resolveSelectedCaption();
   return (r && r.crop) || store.ui.crop || { panX: 0.5, panY: 0.5, zoom: 1, bgBlur: 1 };
 }
@@ -64,7 +67,7 @@ function draw() {
   if (!video || video.readyState < 2 || !video.videoWidth) return;
 
   drawVerticalFrame(ctx, video, W, H, currentCrop());
-  const text = previewCaptionText(store.get(), store.ui, video.currentTime);
+  const text = previewMode() === 'source' ? '' : previewCaptionText(store.get(), store.ui, video.currentTime);
   if (text) drawCaption(ctx, W, H, text);
 }
 
