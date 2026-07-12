@@ -12,6 +12,8 @@ Cut the parts you want from multiple videos, arrange them, and export captioned 
 
 Up to 15 projects are stored in your browser. They are temporary and will eventually be deleted.
 
+<img width="1915" height="951" alt="image" src="https://github.com/user-attachments/assets/90c6eda1-7708-480c-a4f0-5a37afa880f0" />
+
 ## 使い方
 
 https://github.com/user-attachments/assets/953d0831-4a85-46a3-9171-0978622b70f7
@@ -33,7 +35,7 @@ https://github.com/user-attachments/assets/953d0831-4a85-46a3-9171-0978622b70f7
 5. Double-click a preview to adjust its vertical / horizontal crop
 6. `ExportVideo` to export MP4 (vertical, horizontal, or both)
 
-<img width="1915" height="951" alt="image" src="https://github.com/user-attachments/assets/90c6eda1-7708-480c-a4f0-5a37afa880f0" />
+
 
 ## 注意 / Notes
 
