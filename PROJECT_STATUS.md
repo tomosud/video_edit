@@ -28,6 +28,7 @@ ViralCut no longer has a project-folder save/open workflow.
 - Export always uses browser download behavior; it does not write into a chosen project folder.
 - Video and image files can be added by clicking `Add Video` or by dropping them on the `Add Video` button.
 - Export layout is selected with buttons after pressing `ExportVideo`: vertical 9:16, horizontal 16:9, or both.
+- Each caption can be switched to `Title` from its text-edit panel. Titles render large at screen center without the caption background box in previews and exports.
 
 ## Current Architecture
 

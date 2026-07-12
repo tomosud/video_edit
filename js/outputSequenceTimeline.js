@@ -194,6 +194,7 @@ function clampCaptionAnchors(item) {
     if (!caption.id) caption.id = uid('cap');
     if (caption.text == null) caption.text = '';
     if (caption.secondaryText == null) caption.secondaryText = '';
+    caption.kind = caption.kind === 'title' ? 'title' : 'caption';
   }
 }
 
@@ -286,7 +287,7 @@ function captionBar(item, caption, layout) {
   const anchorX = timeToX(abs.anchorMs);
   const width = Math.max(10, right - left);
   const bar = document.createElement('div');
-  bar.className = `caption-bar ${densityClass(abs)}${selected ? ' selected caption-selected' : ''}${cutRelated ? ' cut-related' : ''}`;
+  bar.className = `caption-bar ${densityClass(abs)}${caption.kind === 'title' ? ' caption-title' : ''}${selected ? ' selected caption-selected' : ''}${cutRelated ? ' cut-related' : ''}`;
   bar.dataset.id = caption.id;
   bar.dataset.outputId = item.output.id;
   bar.style.left = left + 'px';
@@ -310,6 +311,7 @@ function captionBar(item, caption, layout) {
     `<span class="caption-label-secondary">${escapeHtml(secondaryLabel)}</span>` +
     '</span>' +
     '<span class="caption-anchor-stem"></span><span class="caption-anchor-dot"></span>' +
+    (caption.kind === 'title' ? '<span class="caption-kind-indicator">Title</span>' : '') +
     '<span class="caption-handle caption-handle-r" data-edge="end"></span>';
   wireCaptionPointer(bar, caption.id);
   return bar;
@@ -385,6 +387,7 @@ function createCaptionAt(clientX) {
   const id = uid('cap');
   const caption = {
     id,
+    kind: 'caption',
     text: '',
     secondaryText: '',
     sourceAnchorMs: sourceAnchorFromSequenceMs(item, anchorMs),
@@ -436,10 +439,22 @@ function mountCaptionTextEdit(captionId) {
     return;
   }
   editingCaptionId = captionId;
+  bar.classList.add('caption-editing');
   const panel = document.createElement('div');
   panel.className = 'caption-edit-panel';
   const primary = captionEditTextarea(found.caption.text || '', 'Primary');
   const secondary = captionEditTextarea(found.caption.secondaryText || '', 'Second');
+  const kindButton = document.createElement('button');
+  kindButton.type = 'button';
+  kindButton.className = 'caption-kind-toggle';
+  const setKindButton = (kind) => {
+    const normalized = kind === 'title' ? 'title' : 'caption';
+    kindButton.dataset.kind = normalized;
+    kindButton.textContent = normalized === 'title' ? 'Title' : 'Caption';
+    kindButton.title = normalized === 'title' ? 'Switch to Caption' : 'Switch to Title';
+    kindButton.setAttribute('aria-pressed', String(normalized === 'title'));
+  };
+  setKindButton(found.caption.kind);
   primary.dataset.captionField = 'text';
   secondary.dataset.captionField = 'secondaryText';
   // One undo snapshot per text-edit session, pushed before the first change,
@@ -453,6 +468,7 @@ function mountCaptionTextEdit(captionId) {
       if (!cur) return;
       cur.caption.text = primary.value;
       cur.caption.secondaryText = secondary.value;
+      cur.caption.kind = kindButton.dataset.kind === 'title' ? 'title' : 'caption';
       ui.selectedCaptionId = captionId;
     });
   };
@@ -486,7 +502,15 @@ function mountCaptionTextEdit(captionId) {
       });
     });
   }
-  panel.append(primary, secondary);
+  kindButton.addEventListener('pointerdown', (e) => e.stopPropagation());
+  kindButton.addEventListener('dblclick', (e) => e.stopPropagation());
+  kindButton.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setKindButton(kindButton.dataset.kind === 'title' ? 'caption' : 'title');
+    sync();
+  });
+  panel.append(primary, secondary, kindButton);
   bar.replaceChildren(panel);
   requestAnimationFrame(() => {
     primary.focus();
@@ -810,6 +834,7 @@ function defaultCaptionForMaterial(material) {
   const anchorOffsetMs = Math.round(duration / 2);
   return {
     id: uid('cap'),
+    kind: 'caption',
     text: '',
     sourceAnchorMs: sourceMs(material?.in || 0) + anchorOffsetMs,
     startOffsetMs: Math.min(-1, inset - anchorOffsetMs),

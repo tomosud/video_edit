@@ -7,6 +7,7 @@ const EDGE_PAD_MS = 34;
 
 export function defaultCaption(startMs = 0, endMs = startMs + 1000) {
   return {
+    kind: 'caption',
     text: '',
     startMs: Math.max(0, Math.round(startMs || 0)),
     endMs: Math.max(Math.round(startMs || 0) + MIN_CAPTION_MS, Math.round(endMs || 0)),
@@ -46,6 +47,7 @@ export function normalizeCaption(caption, startMs = 0, endMs = startMs + 1000) {
   const a = Number.isFinite(+caption.startMs) ? Math.round(+caption.startMs) : fallback.startMs;
   const b = Number.isFinite(+caption.endMs) ? Math.round(+caption.endMs) : fallback.endMs;
   return {
+    kind: caption.kind === 'title' ? 'title' : 'caption',
     text: String(caption.text || ''),
     secondaryText: String(caption.secondaryText || ''),
     startMs: Math.max(0, a),
@@ -107,7 +109,7 @@ export function activeCaptionText(project, sequenceMs) {
     if (!captionLines(row.text).length && !captionLines(row.secondaryText).length) continue;
     const primary = captionTextAt(row, sequenceMs, 'text');
     const secondary = captionTextAt(row, sequenceMs, 'secondaryText');
-    return primary || secondary ? { primary, secondary } : '';
+    return primary || secondary ? { primary, secondary, kind: row.kind === 'title' ? 'title' : 'caption' } : '';
   }
   return '';
 }
@@ -151,7 +153,7 @@ function selectedCaptionTextAt(project, captionId, sequenceMs) {
       const abs = captionAbsolute(caption, startMs, material);
       const primary = captionTextAt(abs, sequenceMs, 'text');
       const secondary = captionTextAt(abs, sequenceMs, 'secondaryText');
-      return primary || secondary ? { primary, secondary } : '';
+      return primary || secondary ? { primary, secondary, kind: abs.kind === 'title' ? 'title' : 'caption' } : '';
     }
     startMs += durationMs;
   }
@@ -179,6 +181,10 @@ export function drawCaption(ctx, width, height, text) {
   const primaryRaw = captionLines(primaryText);
   const secondaryRaw = captionLines(secondaryText);
   if (!ctx || (!primaryRaw.length && !secondaryRaw.length) || !width || !height) return;
+  if (typeof text === 'object' && text?.kind === 'title') {
+    drawTitle(ctx, width, height, primaryRaw, secondaryRaw);
+    return;
+  }
 
   const maxTextWidth = width * 0.84;
   let fontSize = Math.max(16, Math.round(height * 0.045));
@@ -229,6 +235,54 @@ export function drawCaption(ctx, width, height, text) {
     ctx.fillText(line, x, cursorY);
     cursorY += lineHeight;
   }
+  ctx.restore();
+}
+
+function drawTitle(ctx, width, height, primaryRaw, secondaryRaw) {
+  const maxTextWidth = width * 0.86;
+  let fontSize = Math.max(24, Math.round(height * 0.085));
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = captionFont(fontSize);
+
+  let primaryLines = wrapCaptionLines(ctx, primaryRaw, maxTextWidth);
+  let secondaryLines = wrapCaptionLines(ctx, secondaryRaw, maxTextWidth);
+  const tooLarge = () => {
+    const lineHeight = Math.round(fontSize * 1.2);
+    const gap = primaryLines.length && secondaryLines.length ? Math.round(fontSize * 0.3) : 0;
+    return (primaryLines.length + secondaryLines.length) * lineHeight + gap > height * 0.54 ||
+      [...primaryLines, ...secondaryLines].some(line => ctx.measureText(line).width > maxTextWidth);
+  };
+  while (fontSize > 18 && tooLarge()) {
+    fontSize -= 1;
+    ctx.font = captionFont(fontSize);
+    primaryLines = wrapCaptionLines(ctx, primaryRaw, maxTextWidth);
+    secondaryLines = wrapCaptionLines(ctx, secondaryRaw, maxTextWidth);
+  }
+
+  const lineHeight = Math.round(fontSize * 1.2);
+  const groupGap = primaryLines.length && secondaryLines.length ? Math.round(fontSize * 0.3) : 0;
+  const blockHeight = (primaryLines.length + secondaryLines.length) * lineHeight + groupGap;
+  let cursorY = height / 2 - blockHeight / 2 + lineHeight / 2;
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(2, Math.round(fontSize * 0.075));
+  ctx.strokeStyle = 'rgba(0,0,0,.86)';
+  ctx.shadowColor = 'rgba(0,0,0,.9)';
+  ctx.shadowBlur = Math.max(4, Math.round(fontSize * 0.16));
+  ctx.shadowOffsetY = Math.max(1, Math.round(fontSize * 0.035));
+
+  const drawLines = (lines, color) => {
+    ctx.fillStyle = color;
+    for (const line of lines) {
+      ctx.strokeText(line, width / 2, cursorY);
+      ctx.fillText(line, width / 2, cursorY);
+      cursorY += lineHeight;
+    }
+  };
+  drawLines(primaryLines, '#fff');
+  if (primaryLines.length && secondaryLines.length) cursorY += groupGap;
+  drawLines(secondaryLines, '#ffd84d');
   ctx.restore();
 }
 
