@@ -10,9 +10,13 @@ A simple video editor that runs entirely in your browser.
 Cut out the parts you want, arrange them, and export vertical (9:16) and horizontal (16:9) MP4s.
 Your videos never leave your computer.
 
-<img width="1906" height="942" alt="image" src="https://github.com/user-attachments/assets/fec2bf93-2fd1-459a-8350-865cc6aac28e" />
 
-https://github.com/user-attachments/assets/2f78c3a2-bd52-47a0-9cd5-3c45e27d1c89
+https://github.com/user-attachments/assets/953d0831-4a85-46a3-9171-0978622b70f7
+
+
+
+<img width="1919" height="944" alt="image" src="https://github.com/user-attachments/assets/8fd3fe4a-0bbe-43e3-bf6a-ddc79d86a251" />
+
 
 ## 使い方
 
