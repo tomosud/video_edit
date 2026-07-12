@@ -39,7 +39,12 @@
 **検証**: 構文チェック後、ユーザーに短いクリップと複数クリップ構成でエクスポートしてもらい、
 出力が従前と同一に見えること・所要時間の変化を報告してもらう。
 
-## Stage 2: バックグラウンドタブ耐性(速度・体感最大要因の可能性)
+## Stage 2: バックグラウンドタブ耐性(速度・体感最大要因の可能性) ✅ 完了 (2026-07-12)
+
+実装済み: `nextBreath()` を rAF+setTimeout のレースから MessageChannel ベースの yield に変更
+(タイマースロットリング対象外)。`exportProject()` を `navigator.locks.request('viralcut-export', ...)`
+で包み、Web Lock 保持で Chrome の intensive throttling を回避(locks 非対応環境は素通し)。
+本体は `runExport()` に改名。キャッシュバスター 20260712t → 20260712u。
 
 **問題**: `nextBreath()` は rAF と `setTimeout(50ms)` のレース。バックグラウンドタブでは
 rAF が止まり、setTimeout は Chrome のスロットリングで最低1秒、タブが5分裏にいると

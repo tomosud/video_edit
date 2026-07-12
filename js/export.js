@@ -22,15 +22,17 @@ import {
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const even = (v) => Math.max(2, Math.round(v / 2) * 2);
 
-// Yield to the event loop between encode batches. requestAnimationFrame alone
-// stops firing in background tabs and would freeze the export, so race it
-// against a timer.
+// Yield to the event loop between encode batches. requestAnimationFrame stops
+// firing in background tabs and setTimeout gets throttled there (down to once
+// per minute), so use a MessageChannel message, which is exempt from timer
+// throttling and still lets the browser paint progress updates.
+const breathChannel = new MessageChannel();
+const breathWaiters = [];
+breathChannel.port1.onmessage = () => { breathWaiters.shift()?.(); };
 function nextBreath() {
   return new Promise((resolve) => {
-    let done = false;
-    const finish = () => { if (!done) { done = true; resolve(); } };
-    requestAnimationFrame(finish);
-    setTimeout(finish, 50);
+    breathWaiters.push(resolve);
+    breathChannel.port2.postMessage(0);
   });
 }
 
@@ -198,7 +200,16 @@ function cropForItem(item, cropMode) {
   return { panX: 0.5, panY: 0.5, zoom: 1, bgBlur: 1, ...(item.material.crop || {}) };
 }
 
-export async function exportProject({ width, height, fps: requestedFps, cropMode = 'vertical', onProgress, onStatus } = {}) {
+// Holding a Web Lock opts the tab out of Chrome's intensive timer throttling,
+// so a backgrounded export keeps running instead of crawling.
+export function exportProject(options = {}) {
+  if (navigator.locks?.request) {
+    return navigator.locks.request('viralcut-export', () => runExport(options));
+  }
+  return runExport(options);
+}
+
+async function runExport({ width, height, fps: requestedFps, cropMode = 'vertical', onProgress, onStatus } = {}) {
   const project = store.get();
   const items = outputItems(project);
   if (!items.length) throw new Error('No output clips to export');
