@@ -8,9 +8,9 @@ https://tomosud.github.io/video_edit/
 プロジェクトはブラウザの中に、15個まで保存され、いずれ消えます。
 
 A simple video editor that runs entirely in your browser.
-Cut out the parts you want, arrange them, and export vertical (9:16) and horizontal (16:9) MP4s.
+Cut the parts you want from multiple videos, arrange them, and export captioned vertical (9:16) and horizontal (16:9) MP4s.
 
-Your videos never leave your computer.
+Up to 15 projects are stored in your browser. They are temporary and will eventually be deleted.
 
 ## 使い方
 

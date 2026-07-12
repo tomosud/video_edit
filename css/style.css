@@ -184,7 +184,28 @@ video {
   display: flex; align-items: center; gap: 8px;
   background: var(--panel); border-radius: var(--radius); padding: 0 12px;
 }
-.brand { font-weight: 700; font-size: 16px; color: var(--accent); }
+.brand {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 214px;
+  line-height: 1.1;
+  color: #c9c9c9;
+}
+.brand-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -.3px;
+  white-space: nowrap;
+}
+.brand-subtitle {
+  margin-top: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #b9b9b9;
+  white-space: nowrap;
+}
 .repo-link {
   color: #b9c7de;
   border: 1px solid var(--line);
