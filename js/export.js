@@ -246,7 +246,7 @@ async function runExport({ width, height, fps: requestedFps, cropMode = 'vertica
   const canvasSource = new CanvasSource(canvas, {
     codec,
     bitrate,
-    keyFrameInterval: Math.max(1, Math.round(fps * 2)),
+    keyFrameInterval: 2, // seconds (mediabunny unit), not frames
     latencyMode: 'quality',
     hardwareAcceleration: 'prefer-hardware',
   });

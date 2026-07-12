@@ -959,7 +959,7 @@ async function askSessionChoice(initialSessions) {
         <div class="session-choice" data-session-id="${escapeAttr(s.id)}" style="--session-brightness:${brightness}">
           <span class="session-choice-thumb" data-session-open="${escapeAttr(s.id)}">${thumb}</span>
           <button class="session-choice-open" type="button" data-session-open="${escapeAttr(s.id)}">
-            <span class="session-choice-title">${escapeHtml(s.name || 'Untitled edit')}</span>
+            <span class="session-choice-title">${escapeHtml((s.name || 'Untitled edit') + (s.exportName ? ` · ${s.exportName}` : ''))}</span>
             <span class="session-choice-meta">${escapeHtml(date)} / ${formatBytes(s.bytes || 0)} / ${s.outputCount || 0} cuts</span>
           </button>
           <button class="session-delete-btn" type="button" data-session-delete="${escapeAttr(s.id)}">Delete</button>
@@ -1078,19 +1078,37 @@ async function deleteSelected() {
 }
 
 // ---------- export ----------
-// Stream the export straight to disk via showSaveFilePicker when possible so
-// long exports don't hold the whole MP4 in memory. Falls back to the in-memory
-// Blob + download path when the picker is unavailable or user activation has
-// expired (e.g. the 2nd target of a dual export).
-async function pickExportDestination(fileName) {
-  if (!window.showSaveFilePicker) return { kind: 'download' };
+// Stream exports straight to disk so long exports don't hold the whole MP4 in
+// memory. One picker interaction total: a save dialog for a single target, a
+// folder pick (plus upfront overwrite confirmation) for dual export. Falls
+// back to the in-memory Blob + download path when pickers are unavailable or
+// user activation has expired.
+async function pickExportDestinations(targets) {
   if (navigator.userActivation && !navigator.userActivation.isActive) return { kind: 'download' };
   try {
-    const handle = await window.showSaveFilePicker({
-      suggestedName: fileName,
-      types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }],
-    });
-    return { kind: 'stream', writable: await handle.createWritable() };
+    if (targets.length === 1) {
+      if (!window.showSaveFilePicker) return { kind: 'download' };
+      const handle = await window.showSaveFilePicker({
+        suggestedName: targets[0].fileName,
+        types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }],
+      });
+      return { kind: 'stream', writables: [await handle.createWritable()] };
+    }
+    if (!window.showDirectoryPicker) return { kind: 'download' };
+    const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
+    const existing = [];
+    for (const t of targets) {
+      try { await dir.getFileHandle(t.fileName); existing.push(t.fileName); } catch { /* not found */ }
+    }
+    if (existing.length && !(await askConfirm(`Overwrite existing file(s)? ${existing.join(', ')}`, 'Overwrite', 'Confirm Overwrite'))) {
+      return { kind: 'cancel' };
+    }
+    const writables = [];
+    for (const t of targets) {
+      const fileHandle = await dir.getFileHandle(t.fileName, { create: true });
+      writables.push(await fileHandle.createWritable());
+    }
+    return { kind: 'stream', writables };
   } catch (err) {
     if (err?.name === 'AbortError') return { kind: 'cancel' };
     return { kind: 'download' };
@@ -1100,13 +1118,13 @@ async function pickExportDestination(fileName) {
 async function doExport() {
   const settings = await prepareExportSettings();
   if (!settings) return;
+  const dests = await pickExportDestinations(settings.targets);
+  if (dests.kind === 'cancel') { setStatus('Export canceled'); return; }
   showOverlay('Preparing export...');
   try {
     const completed = [];
     for (let i = 0; i < settings.targets.length; i++) {
       const target = settings.targets[i];
-      const dest = await pickExportDestination(target.fileName);
-      if (dest.kind === 'cancel') { setStatus('Export canceled'); return; }
       el.overlayMsg.textContent = `Preparing ${target.label} export...`;
       let blob;
       try {
@@ -1115,12 +1133,16 @@ async function doExport() {
           height: target.height,
           fps: settings.fps,
           cropMode: target.cropMode,
-          writable: dest.writable,
+          writable: dests.writables?.[i],
           onStatus: (m) => el.overlayMsg.textContent = settings.targets.length > 1 ? `${target.label}: ${m}` : m,
           onProgress: (p) => el.overlayProg.value = Math.round(((i + (p || 0)) / settings.targets.length) * 100),
         });
       } catch (err) {
-        try { await dest.writable?.abort?.(); } catch { /* locked or already closed */ }
+        // Abort every writable that has not been consumed yet (the one in
+        // flight is locked by StreamTarget and cleaned up by output.cancel()).
+        for (const w of dests.writables?.slice(i) || []) {
+          try { await w.abort?.(); } catch { /* locked or already closed */ }
+        }
         throw err;
       }
       if (blob) downloadBlob(blob, target.fileName);
@@ -1142,7 +1164,7 @@ async function prepareExportSettings() {
   // user activation, which showSaveFilePicker in doExport needs (transient
   // activation expires in ~5s, so typing a name after it would invalidate it).
   const currentName = p.exportName || p.name || 'viralcut';
-  const requested = prompt('Export file name', stripMp4(currentName));
+  const requested = prompt('Export file name', sanitizeFileName(stripMp4(currentName)) || 'viralcut');
   if (requested == null) return null;
   const baseName = sanitizeFileName(stripMp4(requested)) || 'viralcut';
 
@@ -1190,13 +1212,13 @@ function exportTargets(mode, baseName, sources) {
   const vertical = {
     label: 'Vertical 9:16',
     cropMode: 'vertical',
-    fileName: (mode === 'both' ? `${baseName}-vertical` : baseName) + '.mp4',
+    fileName: (mode === 'both' ? `${baseName}_vertical` : baseName) + '.mp4',
     ...resolveExportSize(sources, 9 / 16),
   };
   const horizontal = {
     label: 'Horizontal 16:9',
     cropMode: 'horizontal',
-    fileName: (mode === 'both' ? `${baseName}-horizontal` : baseName) + '.mp4',
+    fileName: (mode === 'both' ? `${baseName}_horizontal` : baseName) + '.mp4',
     ...resolveExportSize(sources, 16 / 9),
   };
   if (mode === 'horizontal') return [horizontal];
@@ -1216,7 +1238,8 @@ function stripMp4(name) {
 }
 
 function sanitizeFileName(name) {
-  return String(name || '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim();
+  // Windows also rejects trailing dots/spaces in file names.
+  return String(name || '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/, '').trim();
 }
 
 function even(v) {

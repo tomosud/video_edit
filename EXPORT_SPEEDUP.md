@@ -125,7 +125,24 @@ cover フィット・1.08 オーバースキャン・globalAlpha の合成は従
 **検証**: ユーザーに長め(10分以上)の構成でエクスポートしてもらい、
 タスクマネージャでタブのメモリが増え続けないこと、出力 mp4 が再生できることを確認。
 
-## Stage 5: keyFrameInterval の単位修正(品質・小)
+## Stage 5: keyFrameInterval の単位修正(品質・小) ✅ 完了 (2026-07-12)
+
+実装済み: `keyFrameInterval: Math.max(1, Math.round(fps * 2))`(=60、秒単位なので60秒に
+1キーフレームだった)を `2`(2秒ごと)に修正。
+
+同時実施(ユーザー要望のエクスポート UX 改善, 2026-07-12):
+- ファイル名 prompt の初期値にも `sanitizeFileName` を適用(日付由来の `:` `/` は `_` に)。
+  `sanitizeFileName` は Windows で不正な末尾ドット/空白も除去するよう強化。
+- both モードのファイル名サフィックスを `-vertical/-horizontal` → `_vertical/_horizontal` に変更。
+- 書き出し先の選択を1回に: 単体モードは showSaveFilePicker、both モードは
+  showDirectoryPicker(readwrite)を1回だけ開き、既存ファイルの上書き確認を
+  エクスポート開始前に askConfirm でまとめて行う。両ターゲットの writable を先に確保するので
+  2本目もストリーム書き出しになる(Stage 4 の既知の制限を解消)。
+- セッション選択リストのタイトルに、日付ベースのセッション名に続けて exportName を表示
+  (`name · exportName`)。exportName は従来どおり project state として保存済み。
+- Export ratio ダイアログ: 並びを Horizontal / Vertical / Both に変更し、比率を表す
+  □ アイコン(CSS の .ratio-rect)を各ボタンに追加。
+- キャッシュバスター 20260712w → 20260712x。
 
 **問題**: `CanvasSource` に `keyFrameInterval: Math.round(fps * 2)` を渡しているが、
 Mediabunny のこのオプションは**秒単位**(デフォルト5秒)。現状は「60秒に1キーフレーム」に

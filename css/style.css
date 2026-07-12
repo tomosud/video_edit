@@ -1196,6 +1196,20 @@ video {
 }
 .export-mode-btn span { font-weight: 700; }
 .export-mode-btn small { color: var(--text-dim); font-size: 12px; }
+.export-mode-btn .ratio-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 30px;
+}
+.ratio-rect {
+  display: inline-block;
+  border: 1.5px solid var(--text-dim);
+  border-radius: 3px;
+}
+.ratio-rect-h { width: 28px; height: 16px; }
+.ratio-rect-v { width: 16px; height: 28px; }
 .export-mode-btn:focus {
   outline: 2px solid var(--sel);
   outline-offset: 2px;

@@ -12,28 +12,28 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/store.js":                   "./js/store.js?v=20260712w",
-      "./js/db.js":                      "./js/db.js?v=20260712w",
-      "./js/util.js":                    "./js/util.js?v=20260712w",
-      "./js/fileOpen.js":                "./js/fileOpen.js?v=20260712w",
-      "./js/mediaInfo.js":               "./js/mediaInfo.js?v=20260712w",
-      "./js/mediaSession.js":            "./js/mediaSession.js?v=20260712w",
-      "./js/mediabunny.js":              "./js/mediabunny.js?v=20260712w",
-      "./js/thumbnails.js":              "./js/thumbnails.js?v=20260712w",
-      "./js/sourceTimeline.js":          "./js/sourceTimeline.js?v=20260712w",
-      "./js/frameStrip.js":              "./js/frameStrip.js?v=20260712w",
-      "./js/materialShelf.js":           "./js/materialShelf.js?v=20260712w",
-      "./js/outputSequenceTimeline.js":  "./js/outputSequenceTimeline.js?v=20260712w",
-      "./js/captions.js":                "./js/captions.js?v=20260712w",
-      "./js/drawing.js":                 "./js/drawing.js?v=20260712w",
-      "./js/cropPreview.js":             "./js/cropPreview.js?v=20260712w",
-      "./js/horizontalPreview.js":       "./js/horizontalPreview.js?v=20260712w",
-      "./js/export.js":                  "./js/export.js?v=20260712w",
+      "./js/store.js":                   "./js/store.js?v=20260712x",
+      "./js/db.js":                      "./js/db.js?v=20260712x",
+      "./js/util.js":                    "./js/util.js?v=20260712x",
+      "./js/fileOpen.js":                "./js/fileOpen.js?v=20260712x",
+      "./js/mediaInfo.js":               "./js/mediaInfo.js?v=20260712x",
+      "./js/mediaSession.js":            "./js/mediaSession.js?v=20260712x",
+      "./js/mediabunny.js":              "./js/mediabunny.js?v=20260712x",
+      "./js/thumbnails.js":              "./js/thumbnails.js?v=20260712x",
+      "./js/sourceTimeline.js":          "./js/sourceTimeline.js?v=20260712x",
+      "./js/frameStrip.js":              "./js/frameStrip.js?v=20260712x",
+      "./js/materialShelf.js":           "./js/materialShelf.js?v=20260712x",
+      "./js/outputSequenceTimeline.js":  "./js/outputSequenceTimeline.js?v=20260712x",
+      "./js/captions.js":                "./js/captions.js?v=20260712x",
+      "./js/drawing.js":                 "./js/drawing.js?v=20260712x",
+      "./js/cropPreview.js":             "./js/cropPreview.js?v=20260712x",
+      "./js/horizontalPreview.js":       "./js/horizontalPreview.js?v=20260712x",
+      "./js/export.js":                  "./js/export.js?v=20260712x",
       "./lib/mediabunny.min.js":         "./lib/mediabunny.min.js?v=mb-1"
     }
   }
   </script>
-  <link rel="stylesheet" href="css/style.css?v=20260712w">
+  <link rel="stylesheet" href="css/style.css?v=20260712x">
 </head>
 <body>
   <div id="app">
@@ -179,13 +179,16 @@
     <div class="overlay-box export-mode-box" role="dialog" aria-modal="true" aria-labelledby="exportModeTitle">
       <div id="exportModeTitle" class="confirm-title">Export ratio</div>
       <div class="export-mode-actions">
-        <button class="btn export-mode-btn" type="button" data-export-mode="vertical">
-          <span>Vertical</span><small>9:16</small>
-        </button>
         <button class="btn export-mode-btn" type="button" data-export-mode="horizontal">
+          <span class="ratio-icon"><i class="ratio-rect ratio-rect-h"></i></span>
           <span>Horizontal</span><small>16:9</small>
         </button>
+        <button class="btn export-mode-btn" type="button" data-export-mode="vertical">
+          <span class="ratio-icon"><i class="ratio-rect ratio-rect-v"></i></span>
+          <span>Vertical</span><small>9:16</small>
+        </button>
         <button class="btn export-mode-btn" type="button" data-export-mode="both">
+          <span class="ratio-icon"><i class="ratio-rect ratio-rect-v"></i><i class="ratio-rect ratio-rect-h"></i></span>
           <span>Both</span><small>9:16 + 16:9</small>
         </button>
       </div>
@@ -195,6 +198,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260712w"></script>
+  <script type="module" src="js/app.js?v=20260712x"></script>
 </body>
 </html>
