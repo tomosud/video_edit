@@ -214,13 +214,15 @@ function hasWork() {
 
 function wireVideoDrop() {
   const takeFiles = guard(async (files) => {
-    const videos = [...files].filter(f => f.type.startsWith('video/') || /\.(mp4|mov|mkv|webm|m4v)$/i.test(f.name || ''));
-    if (!videos.length) {
-      setStatus('Drop video files on Add Video');
+    const mediaFiles = [...files].filter(f =>
+      f.type.startsWith('video/') || f.type.startsWith('image/') ||
+      /\.(mp4|mov|mkv|webm|m4v|avif|bmp|gif|jpe?g|png|webp)$/i.test(f.name || ''));
+    if (!mediaFiles.length) {
+      setStatus('Drop video or image files on Add Video');
       return;
     }
-    await fileOpen.addVideoFiles(videos);
-    setStatus(videos.length === 1 ? 'Video added: ' + videos[0].name : 'Videos added: ' + videos.length);
+    await fileOpen.addVideoFiles(mediaFiles);
+    setStatus(mediaFiles.length === 1 ? 'Media added: ' + mediaFiles[0].name : 'Media added: ' + mediaFiles.length);
     updateChrome();
   });
 
@@ -1417,7 +1419,7 @@ function bindVideo(ui) {
       el.srcVideo.removeAttribute('src');
       try { el.srcVideo.load(); } catch { /* ignore */ }
     }
-    el.srcEmpty.textContent = ui.activeSourceId ? 'Video is no longer available' : 'Add a video to begin';
+    el.srcEmpty.textContent = ui.activeSourceId ? 'Media is no longer available' : 'Add a video or image to begin';
     el.srcEmpty.hidden = false;
   }
 }

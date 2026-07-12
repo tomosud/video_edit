@@ -3,12 +3,12 @@
 https://tomosud.github.io/video_edit/
 
 ブラウザだけで動く、シンプルな動画編集アプリ。
-複数の動画から欲しい部分を切り出して並べ、字幕付きの縦(9:16)・横(16:9)の MP4 を書き出せます。
+複数の動画や画像から欲しい部分を切り出して並べ、字幕付きの縦(9:16)・横(16:9)の MP4 を書き出せます。
 
 プロジェクトはブラウザの中に、15個まで保存され、いずれ消えます。
 
 A simple video editor that runs entirely in your browser.
-Cut the parts you want from multiple videos, arrange them, and export captioned vertical (9:16) and horizontal (16:9) MP4s.
+Cut and arrange parts from multiple videos and images, then export captioned vertical (9:16) and horizontal (16:9) MP4s.
 
 Up to 15 projects are stored in your browser. They are temporary and will eventually be deleted.
 
@@ -22,7 +22,7 @@ https://github.com/user-attachments/assets/12d999ea-149b-46ce-896d-83cefc5f225d
 
 
 
-1. `Add Video` で動画を追加(ボタンへのドロップも可)
+1. `Add Video` で動画または画像を追加(ボタンへのドロップも可)。画像は30秒の動画として扱われ、長辺3840pxを上限に読み込まれます
 2. `1 Cut / Split` タイムラインの空白をダブルクリックしてカットを作成、ドラッグで範囲調整
 3. `2 Cut Stock` のカードを `3 Edit` へドラッグして並べる
 4. 字幕は `3 Edit` の字幕レーンをダブルクリックで追加、もう一度ダブルクリックで入力
@@ -30,7 +30,7 @@ https://github.com/user-attachments/assets/12d999ea-149b-46ce-896d-83cefc5f225d
 6. `ExportVideo` で MP4 を書き出し(縦・横・両方)
 
 ## How to use
-1. `Add Video` to add videos (drag & drop onto the button also works)
+1. `Add Video` to add videos or images (drag & drop onto the button also works). Images become 30-second clips and are limited to 3840px on the longest edge
 2. Double-click empty space on the `1 Cut / Split` timeline to make a cut, drag to adjust
 3. Drag cards from `2 Cut Stock` into `3 Edit`
 4. Double-click the caption lane in `3 Edit` to add a caption, double-click it again to type

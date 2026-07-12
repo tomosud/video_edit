@@ -11,7 +11,7 @@ function emptyProject() {
     version: 2,
     name: 'untitled',
     output: { width: 1080, height: 1920, fps: 30 },
-    sources: [],     // {id, fileName, mediaKey, size, lastModified, duration, fps, width, height, hasAudio}
+    sources: [],     // {id, fileName, mediaKey, size, lastModified, mediaType, duration, fps, width, height, hasAudio}
     materials: [],   // {id, sourceId, in, out, title?, horizontalCrop?, crop?} - cutout clips (shelf)
     outputs: [],     // {id, materialId, captions:[]} - sequence
     bgm: null,

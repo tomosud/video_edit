@@ -11,7 +11,7 @@ This file is the single source of truth for the current implementation. Older pl
 
 ViralCut is a browser-only lightweight video editing tool.
 
-- Input: local video files selected or dropped into the browser.
+- Input: local video or image files selected or dropped into the browser. Images are converted locally to 30-second video sources, with the longest edge limited to 3840px.
 - Main workflow: add videos, create source clips, arrange them as output clips, crop, export MP4.
 - Runtime target: Chrome / Edge on localhost or GitHub Pages-style static hosting.
 - Core code style: vanilla JavaScript ES modules, no bundler.
@@ -22,11 +22,11 @@ ViralCut is a browser-only lightweight video editing tool.
 ViralCut no longer has a project-folder save/open workflow.
 
 - Editing state is autosaved to IndexedDB under the `viralcut` database.
-- Added video `File` objects are also stored in IndexedDB when the browser allows it.
-- Reload restores the last edit and re-registers saved video object URLs.
+- Added media `File` objects are also stored in IndexedDB when the browser allows it.
+- Reload restores the last edit and re-registers saved media object URLs.
 - `New` asks twice when work exists, then clears autosave, history, saved media, and in-memory object URLs.
 - Export always uses browser download behavior; it does not write into a chosen project folder.
-- Video files can be added by clicking `Add Video` or by dropping video files on the `Add Video` button.
+- Video and image files can be added by clicking `Add Video` or by dropping them on the `Add Video` button.
 - Export layout is selected with buttons after pressing `ExportVideo`: vertical 9:16, horizontal 16:9, or both.
 
 ## Current Architecture
@@ -35,7 +35,7 @@ ViralCut no longer has a project-folder save/open workflow.
 
 The project state is centered on three object types:
 
-- `Source`: imported video metadata and file identity.
+- `Source`: imported video/image metadata and file identity.
 - `Material`: a reusable source range, stored as `in` / `out`.
 - `Output`: an arranged output clip that references one `Material` and stores crop settings.
 
@@ -148,8 +148,9 @@ Updated [index.html](index.html), [js/app.js](js/app.js), [js/store.js](js/store
 Updated [index.html](index.html), [css/style.css](css/style.css), [js/app.js](js/app.js), and [js/fileOpen.js](js/fileOpen.js):
 
 - `Add Video` remains enabled from startup.
-- Clicking `Add Video` can select one or more videos.
-- Dropping video files on `Add Video` adds them to the current edit.
+- Clicking `Add Video` can select one or more videos or images.
+- Dropping video or image files on `Add Video` adds them to the current edit.
+- Images are encoded locally as compact 30-second MP4 sources; dimensions preserve aspect ratio and the longest edge is capped at 3840px.
 - Selected/dropped files are saved to IndexedDB for reload recovery.
 
 ### Export Layout Selection

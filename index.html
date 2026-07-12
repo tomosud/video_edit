@@ -12,28 +12,29 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/store.js":                   "./js/store.js?v=20260712ag",
-      "./js/db.js":                      "./js/db.js?v=20260712ag",
-      "./js/util.js":                    "./js/util.js?v=20260712ag",
-      "./js/fileOpen.js":                "./js/fileOpen.js?v=20260712ag",
-      "./js/mediaInfo.js":               "./js/mediaInfo.js?v=20260712ag",
-      "./js/mediaSession.js":            "./js/mediaSession.js?v=20260712ag",
-      "./js/mediabunny.js":              "./js/mediabunny.js?v=20260712ag",
-      "./js/thumbnails.js":              "./js/thumbnails.js?v=20260712ag",
-      "./js/sourceTimeline.js":          "./js/sourceTimeline.js?v=20260712ag",
-      "./js/frameStrip.js":              "./js/frameStrip.js?v=20260712ag",
-      "./js/materialShelf.js":           "./js/materialShelf.js?v=20260712ag",
-      "./js/outputSequenceTimeline.js":  "./js/outputSequenceTimeline.js?v=20260712ag",
-      "./js/captions.js":                "./js/captions.js?v=20260712ag",
-      "./js/drawing.js":                 "./js/drawing.js?v=20260712ag",
-      "./js/cropPreview.js":             "./js/cropPreview.js?v=20260712ag",
-      "./js/horizontalPreview.js":       "./js/horizontalPreview.js?v=20260712ag",
-      "./js/export.js":                  "./js/export.js?v=20260712ag",
+      "./js/store.js":                   "./js/store.js?v=20260712ai",
+      "./js/db.js":                      "./js/db.js?v=20260712ai",
+      "./js/util.js":                    "./js/util.js?v=20260712ai",
+      "./js/fileOpen.js":                "./js/fileOpen.js?v=20260712ai",
+      "./js/imageVideo.js":              "./js/imageVideo.js?v=20260712ai",
+      "./js/mediaInfo.js":               "./js/mediaInfo.js?v=20260712ai",
+      "./js/mediaSession.js":            "./js/mediaSession.js?v=20260712ai",
+      "./js/mediabunny.js":              "./js/mediabunny.js?v=20260712ai",
+      "./js/thumbnails.js":              "./js/thumbnails.js?v=20260712ai",
+      "./js/sourceTimeline.js":          "./js/sourceTimeline.js?v=20260712ai",
+      "./js/frameStrip.js":              "./js/frameStrip.js?v=20260712ai",
+      "./js/materialShelf.js":           "./js/materialShelf.js?v=20260712ai",
+      "./js/outputSequenceTimeline.js":  "./js/outputSequenceTimeline.js?v=20260712ai",
+      "./js/captions.js":                "./js/captions.js?v=20260712ai",
+      "./js/drawing.js":                 "./js/drawing.js?v=20260712ai",
+      "./js/cropPreview.js":             "./js/cropPreview.js?v=20260712ai",
+      "./js/horizontalPreview.js":       "./js/horizontalPreview.js?v=20260712ai",
+      "./js/export.js":                  "./js/export.js?v=20260712ai",
       "./lib/mediabunny.min.js":         "./lib/mediabunny.min.js?v=mb-1"
     }
   }
   </script>
-  <link rel="stylesheet" href="css/style.css?v=20260712ag">
+  <link rel="stylesheet" href="css/style.css?v=20260712ai">
 </head>
 <body>
   <div id="app">
@@ -43,14 +44,14 @@
         <span class="brand-title">Disposable Video Editor</span>
         <span class="brand-subtitle">使いすて動画エディター</span>
         <span id="brandInfo" class="brand-info" role="tooltip">
-          <span lang="ja">ブラウザだけで動く、シンプルな動画編集アプリ。<br>複数の動画から欲しい部分を切り出して並べ、字幕付きの縦（9:16）・横（16:9）の MP4 を書き出せます。<br><br>プロジェクトはブラウザの中に15個まで保存され、いずれ消えます。</span>
-          <span lang="en">A simple video editor that runs entirely in your browser.<br>Cut the parts you want from multiple videos, arrange them, and export captioned vertical (9:16) and horizontal (16:9) MP4s.<br><br>Up to 15 projects are stored in your browser. They are temporary and will eventually be deleted.</span>
+          <span lang="ja">ブラウザだけで動く、シンプルな動画編集アプリ。<br>複数の動画や画像から欲しい部分を切り出して並べ、字幕付きの縦（9:16）・横（16:9）の MP4 を書き出せます。<br><br>プロジェクトはブラウザの中に15個まで保存され、いずれ消えます。</span>
+          <span lang="en">A simple video editor that runs entirely in your browser.<br>Cut and arrange parts from multiple videos and images, then export captioned vertical (9:16) and horizontal (16:9) MP4s.<br><br>Up to 15 projects are stored in your browser. They are temporary and will eventually be deleted.</span>
         </span>
       </span>
       <a class="repo-link" href="https://github.com/tomosud/video_edit" target="_blank" rel="noopener">GitHub</a>
       <button id="btnNewProject" class="btn">🗂 New/Sessions</button>
       <span class="sep"></span>
-      <button id="btnAddVideo" class="btn" title="Click or drop video files here">＋🎬 Add Video</button>
+      <button id="btnAddVideo" class="btn" title="Click or drop video or image files here">＋🎬 Add Video</button>
       <select id="sourceSelect" class="sel" disabled></select>
       <div id="sourcePicker" class="source-picker"></div>
       <span class="sep"></span>
@@ -106,7 +107,7 @@
           <span id="playInfo" class="play-info preview-play-info">Idle</span>
           <canvas id="horizCanvas"></canvas>
           <video id="srcVideo" playsinline preload="auto"></video>
-          <div id="srcEmpty" class="placeholder abs">Add a video to begin</div>
+          <div id="srcEmpty" class="placeholder abs">Add a video or image to begin</div>
         </div>
         <div id="seekBar" class="seekbar" title="Drag to scrub">
           <div id="seekMarks" class="seek-marks"></div>
@@ -205,6 +206,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260712ag"></script>
+  <script type="module" src="js/app.js?v=20260712ai"></script>
 </body>
 </html>

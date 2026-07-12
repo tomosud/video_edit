@@ -3,6 +3,7 @@ import { store, uid } from './store.js';
 import * as db from './db.js';
 import { hashKey } from './util.js';
 import { readMediaInfo } from './mediaInfo.js';
+import { IMAGE_DURATION, IMAGE_FPS, imageToVideoFile, isImageFile } from './imageVideo.js';
 
 const media = new Map(); // sourceId -> { file, url, handle }
 let addVideoInFlight = null;
@@ -63,7 +64,10 @@ async function addVideoImpl() {
   if ('showOpenFilePicker' in window) {
     const handles = await window.showOpenFilePicker({
       multiple: true,
-      types: [{ description: 'Video', accept: { 'video/*': ['.mp4', '.mov', '.mkv', '.webm', '.m4v'] } }],
+      types: [
+        { description: 'Video', accept: { 'video/*': ['.mp4', '.mov', '.mkv', '.webm', '.m4v'] } },
+        { description: 'Image', accept: { 'image/*': ['.avif', '.bmp', '.gif', '.jpg', '.jpeg', '.png', '.webp'] } },
+      ],
     });
     const files = [];
     for (const handle of handles) files.push({ file: await handle.getFile(), handle });
@@ -76,7 +80,7 @@ async function addVideoImpl() {
 
 export async function addVideoFiles(files) {
   const entries = [...files]
-    .filter(file => file?.type?.startsWith('video/') || /\.(mp4|mov|mkv|webm|m4v)$/i.test(file?.name || ''))
+    .filter(file => file?.type?.startsWith('video/') || /\.(mp4|mov|mkv|webm|m4v)$/i.test(file?.name || '') || isImageFile(file))
     .map(file => ({ file, handle: null }));
   return addVideoEntries(entries);
 }
@@ -97,20 +101,36 @@ async function addOneVideo(file, handle = null) {
   const existing = store.get().sources.find(s =>
     s.mediaKey === mediaKey || (s.fileName === file.name && s.size === file.size));
   if (existing) {
-    register(existing.id, file, handle);
-    saveSessionMedia(existing.id, file).catch((err) => { console.warn('media save failed', err); store.reportPersistError(err); });
+    const linkedFile = isImageFile(file) ? (await imageToVideoFile(file)).file : file;
+    register(existing.id, linkedFile, isImageFile(file) ? null : handle);
+    saveSessionMedia(existing.id, linkedFile).catch((err) => { console.warn('media save failed', err); store.reportPersistError(err); });
     store.setUI({ activeSourceId: existing.id });
     return existing.id;
   }
 
   const id = uid('src');
-  const url = register(id, file, handle);
+  const image = isImageFile(file);
+  const converted = image ? await imageToVideoFile(file) : null;
+  const linkedFile = converted?.file || file;
+  const url = register(id, linkedFile, image ? null : handle);
   let info;
-  try {
-    info = await readMediaInfo(file);
-  } catch (err) {
-    console.warn('Mediabunny metadata probe failed; falling back to native metadata.', err);
-    info = await nativeMediaInfo(url);
+  if (image) {
+    info = {
+      duration: IMAGE_DURATION,
+      fps: IMAGE_FPS,
+      width: converted.width,
+      height: converted.height,
+      hasAudio: false,
+      videoDecodable: true,
+      audioDecodable: false,
+    };
+  } else {
+    try {
+      info = await readMediaInfo(file);
+    } catch (err) {
+      console.warn('Mediabunny metadata probe failed; falling back to native metadata.', err);
+      info = await nativeMediaInfo(url);
+    }
   }
 
   store.update((p, ui) => {
@@ -120,6 +140,7 @@ async function addOneVideo(file, handle = null) {
       mediaKey,
       size: file.size,
       lastModified: file.lastModified,
+      mediaType: image ? 'image' : 'video',
       duration: info.duration,
       fps: info.fps,
       width: info.width,
@@ -131,7 +152,7 @@ async function addOneVideo(file, handle = null) {
     });
     ui.activeSourceId = id;
   });
-  saveSessionMedia(id, file).catch((err) => { console.warn('media save failed', err); store.reportPersistError(err); });
+  saveSessionMedia(id, linkedFile).catch((err) => { console.warn('media save failed', err); store.reportPersistError(err); });
   return id;
 }
 
@@ -168,7 +189,7 @@ function pickWithInput() {
   return new Promise((resolve) => {
     const inp = document.createElement('input');
     inp.type = 'file';
-    inp.accept = 'video/*';
+    inp.accept = 'video/*,image/*';
     inp.multiple = true;
     inp.onchange = () => resolve(inp.files || []);
     // Without this, cancelling the dialog leaves the promise pending forever
