@@ -939,7 +939,7 @@ async function askSessionChoice(initialSessions) {
   const box = document.createElement('div');
   box.className = 'overlay-box session-picker-box';
   let sessions = await withSessionSizes(initialSessions);
-  const storageText = await storageUsageText();
+  let storageText = await storageUsageText(sessions);
   const render = () => {
     const rows = sessions.map((s, index) => {
       const updated = s.updatedAt || s.savedAt || 0;
@@ -1000,6 +1000,7 @@ async function askSessionChoice(initialSessions) {
           return;
         }
         sessions = await withSessionSizes(remaining);
+        storageText = await storageUsageText(sessions);
         render();
         return;
       }
@@ -1023,13 +1024,15 @@ function sessionBrightness(index, count) {
   return (1 - t * 0.5).toFixed(2);
 }
 
-async function storageUsageText() {
-  if (!navigator.storage?.estimate) return 'Storage: unavailable';
+async function storageUsageText(sessions = []) {
+  const sessionBytes = sessions.reduce((sum, session) => sum + Math.max(0, Number(session.bytes) || 0), 0);
+  const appText = `Saved sessions: ${formatBytes(sessionBytes)}`;
+  if (!navigator.storage?.estimate) return appText;
   try {
     const { usage = 0, quota = 0 } = await navigator.storage.estimate();
-    return `Storage: ${formatBytes(usage)} used / ${formatBytes(quota)} available quota (browser estimate)`;
+    return `${appText} / Origin total: ${formatBytes(usage)} of ${formatBytes(quota)} (may include other apps on this origin)`;
   } catch {
-    return 'Storage: unavailable';
+    return appText;
   }
 }
 

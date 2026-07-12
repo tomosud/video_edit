@@ -31,6 +31,7 @@ ViralCut no longer has a project-folder save/open workflow.
 - Export layout is selected with buttons after pressing `ExportVideo`: vertical 9:16, horizontal 16:9, or both.
 - Each caption can be switched to `Title` from its text-edit panel. Titles render large at screen center without the caption background box in previews and exports.
 - Deleting the final saved session deletes the entire `viralcut` IndexedDB database, including stores and cached data left by older specifications.
+- Session-list reads do not recreate an empty IndexedDB after that deletion. The storage display separates saved-session bytes from the browser's origin-wide estimate, which may include unrelated apps sharing the origin.
 
 ## Current Architecture
 

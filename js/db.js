@@ -5,6 +5,19 @@ const STORES = ['autosave', 'handles', 'history', 'media', 'models', 'thumbs', '
 
 let _db = null;
 
+async function databaseExists() {
+  if (_db) return true;
+  // Chrome/Edge expose a non-creating database inventory. Without it we keep
+  // the older behavior as a compatibility fallback.
+  if (typeof indexedDB.databases !== 'function') return true;
+  try {
+    const databases = await indexedDB.databases();
+    return databases.some(db => db.name === DB_NAME);
+  } catch {
+    return true;
+  }
+}
+
 function open() {
   if (_db) return Promise.resolve(_db);
   return new Promise((resolve, reject) => {
@@ -80,7 +93,7 @@ export async function keys(store) {
 }
 
 // --- convenience ---
-export const loadAutosave   = () => get('autosave', 'current');
+export const loadAutosave   = async () => (await databaseExists()) ? get('autosave', 'current') : undefined;
 export const saveAutosave   = (state) => set('autosave', 'current', state);
 export const clearAutosave  = () => del('autosave', 'current');
 export const loadHistory    = () => get('history', 'current');
@@ -102,6 +115,9 @@ export const saveSessionMedia = (sessionId, sourceId, file) => set('sessionMedia
 export const loadSessionMedia = (sessionId, sourceId) => get('sessionMedia', mediaKey(sessionId, sourceId));
 
 export async function listSessions() {
+  // Merely opening New / Sessions must not recreate an empty database after
+  // the user deliberately deleted the final session.
+  if (!(await databaseExists())) return [];
   const sessions = await all('sessions');
   return sessions
     .filter(s => s?.id)
