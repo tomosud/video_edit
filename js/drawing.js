@@ -17,6 +17,19 @@ const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const BLUR_SHRINK = 4;
 let blurScratch = null;
 
+// Source monitor: preserve the video's native aspect ratio and contain the
+// complete frame inside the available canvas without crop or blur.
+export function drawSourceFrame(ctx, source, W, H) {
+  const { w: vw, h: vh } = sourceSize(source);
+  if (!vw || !vh) return;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+  const scale = Math.min(W / vw, H / vh);
+  const dw = vw * scale;
+  const dh = vh * scale;
+  ctx.drawImage(source, (W - dw) / 2, (H - dh) / 2, dw, dh);
+}
+
 export function drawBlurBackground(ctx, source, W, H, amount, blurPx = 24) {
   if (amount <= 0) return;
   const { w: vw, h: vh } = sourceSize(source);

@@ -16,7 +16,7 @@ import { escapeAttr, escapeHtml, fmtTime, frameFromTime, frameProbeTime, makeScr
 const $ = (id) => document.getElementById(id);
 const el = {};
 ['btnNewProject','btnAddVideo','sourceSelect','btnUndo','btnRedo',
- 'btnExport','status','playInfo','sourcePicker','srcVideo','srcEmpty','origPane','origTime','btnPlay','btnLoop','vertPane','vertCanvas','horizCanvas',
+ 'btnExport','status','playInfo','sourcePicker','srcVideo','srcEmpty','origPane','origTime','horizMonitorTitle','btnPlay','btnLoop','vertPane','vertCanvas','horizCanvas',
  'panX','panY','zoom','bgBlur','verticalCropReset',
  'sourcePanX','sourcePanY','sourceZoom','sourceBgBlur','sourceCropReset',
  'overlay','overlayMsg','overlayProg',
@@ -570,6 +570,7 @@ function setPreviewState(mode, text) {
   const prevMode = el.origPane?.dataset.previewMode;
   el.playInfo.dataset.mode = mode;
   el.playInfo.textContent = text;
+  if (el.horizMonitorTitle) el.horizMonitorTitle.textContent = mode === 'source' ? 'Source Monitor' : 'Monitor 16:9';
   for (const pane of [el.origPane, el.vertPane]) {
     if (pane) pane.dataset.previewMode = mode;
   }

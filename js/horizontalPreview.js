@@ -1,7 +1,7 @@
 // horizontalPreview.js - 16:9 canvas preview with crop/pan/zoom/blur.
 import { store } from './store.js';
 import { previewCaptionText, captionOutputId, drawCaption } from './captions.js';
-import { drawHorizontalFrame } from './drawing.js';
+import { drawHorizontalFrame, drawSourceFrame } from './drawing.js';
 
 let canvas, ctx, video;
 let raf = 0;
@@ -18,7 +18,7 @@ export function init(canvasEl, videoEl, hooks = {}) {
   video.addEventListener('pause', stopLoop);
   video.addEventListener('ended', stopLoop);
   video.addEventListener('seeked', draw);
-  video.addEventListener('loadeddata', draw);
+  video.addEventListener('loadeddata', () => { resize(); draw(); });
   store.subscribe(draw);
   draw();
 }
@@ -33,11 +33,15 @@ function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const maxH = Math.max(1, wrap.clientHeight);
   const maxW = Math.max(1, wrap.clientWidth);
+  const sourceAspect = video?.videoWidth && video?.videoHeight
+    ? video.videoWidth / video.videoHeight
+    : 16 / 9;
+  const aspect = previewMode() === 'source' ? sourceAspect : 16 / 9;
   let w = maxW;
-  let h = w * 9 / 16;
+  let h = w / aspect;
   if (h > maxH) {
     h = maxH;
-    w = h * 16 / 9;
+    w = h * aspect;
   }
   canvas.style.width = w + 'px';
   canvas.style.height = h + 'px';
@@ -61,8 +65,10 @@ function draw() {
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
   if (!video || video.readyState < 2 || !video.videoWidth) return;
-  drawHorizontalFrame(ctx, video, W, H, currentCrop());
-  const text = previewMode() === 'source' ? '' : previewCaptionText(store.get(), store.ui, video.currentTime);
+  const mode = previewMode();
+  if (mode === 'source') drawSourceFrame(ctx, video, W, H);
+  else drawHorizontalFrame(ctx, video, W, H, currentCrop());
+  const text = mode === 'source' ? '' : previewCaptionText(store.get(), store.ui, video.currentTime);
   if (text) drawCaption(ctx, W, H, text);
 }
 
