@@ -11,16 +11,30 @@ export function sourceSize(source) {
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
+// Blur at reduced resolution on a shared scratch canvas, then scale up.
+// Visually equivalent for a heavy background blur (radius shrinks with the
+// canvas), but far cheaper than filtering at full output size every frame.
+const BLUR_SHRINK = 4;
+let blurScratch = null;
+
 export function drawBlurBackground(ctx, source, W, H, amount, blurPx = 24) {
   if (amount <= 0) return;
   const { w: vw, h: vh } = sourceSize(source);
   if (!vw || !vh) return;
-  const scale = Math.max(W / vw, H / vh) * 1.08;
+  const ow = Math.max(1, Math.round(W / BLUR_SHRINK));
+  const oh = Math.max(1, Math.round(H / BLUR_SHRINK));
+  if (!blurScratch) blurScratch = document.createElement('canvas');
+  if (blurScratch.width !== ow) blurScratch.width = ow;
+  if (blurScratch.height !== oh) blurScratch.height = oh;
+  const octx = blurScratch.getContext('2d');
+  const scale = Math.max(ow / vw, oh / vh) * 1.08;
   const dw = vw * scale, dh = vh * scale;
+  octx.filter = `blur(${blurPx / BLUR_SHRINK}px)`;
+  octx.drawImage(source, (ow - dw) / 2, (oh - dh) / 2, dw, dh);
+  octx.filter = 'none';
   ctx.save();
   ctx.globalAlpha = clamp01(amount);
-  ctx.filter = `blur(${blurPx}px)`;
-  ctx.drawImage(source, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  ctx.drawImage(blurScratch, 0, 0, ow, oh, 0, 0, W, H);
   ctx.restore();
 }
 

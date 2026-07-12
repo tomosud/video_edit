@@ -1078,6 +1078,25 @@ async function deleteSelected() {
 }
 
 // ---------- export ----------
+// Stream the export straight to disk via showSaveFilePicker when possible so
+// long exports don't hold the whole MP4 in memory. Falls back to the in-memory
+// Blob + download path when the picker is unavailable or user activation has
+// expired (e.g. the 2nd target of a dual export).
+async function pickExportDestination(fileName) {
+  if (!window.showSaveFilePicker) return { kind: 'download' };
+  if (navigator.userActivation && !navigator.userActivation.isActive) return { kind: 'download' };
+  try {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: fileName,
+      types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }],
+    });
+    return { kind: 'stream', writable: await handle.createWritable() };
+  } catch (err) {
+    if (err?.name === 'AbortError') return { kind: 'cancel' };
+    return { kind: 'download' };
+  }
+}
+
 async function doExport() {
   const settings = await prepareExportSettings();
   if (!settings) return;
@@ -1086,16 +1105,25 @@ async function doExport() {
     const completed = [];
     for (let i = 0; i < settings.targets.length; i++) {
       const target = settings.targets[i];
+      const dest = await pickExportDestination(target.fileName);
+      if (dest.kind === 'cancel') { setStatus('Export canceled'); return; }
       el.overlayMsg.textContent = `Preparing ${target.label} export...`;
-      const blob = await exportProject({
-        width: target.width,
-        height: target.height,
-        fps: settings.fps,
-        cropMode: target.cropMode,
-        onStatus: (m) => el.overlayMsg.textContent = settings.targets.length > 1 ? `${target.label}: ${m}` : m,
-        onProgress: (p) => el.overlayProg.value = Math.round(((i + (p || 0)) / settings.targets.length) * 100),
-      });
-      downloadBlob(blob, target.fileName);
+      let blob;
+      try {
+        blob = await exportProject({
+          width: target.width,
+          height: target.height,
+          fps: settings.fps,
+          cropMode: target.cropMode,
+          writable: dest.writable,
+          onStatus: (m) => el.overlayMsg.textContent = settings.targets.length > 1 ? `${target.label}: ${m}` : m,
+          onProgress: (p) => el.overlayProg.value = Math.round(((i + (p || 0)) / settings.targets.length) * 100),
+        });
+      } catch (err) {
+        try { await dest.writable?.abort?.(); } catch { /* locked or already closed */ }
+        throw err;
+      }
+      if (blob) downloadBlob(blob, target.fileName);
       completed.push(target.fileName);
     }
     setStatus('Export complete: ' + completed.join(', '));
@@ -1110,13 +1138,16 @@ async function prepareExportSettings() {
   }).filter(it => it?.source);
   if (!items.length) return null;
 
-  const mode = await askExportMode();
-  if (!mode) return null;
-
+  // Name first, mode second: the mode button click is then the most recent
+  // user activation, which showSaveFilePicker in doExport needs (transient
+  // activation expires in ~5s, so typing a name after it would invalidate it).
   const currentName = p.exportName || p.name || 'viralcut';
   const requested = prompt('Export file name', stripMp4(currentName));
   if (requested == null) return null;
   const baseName = sanitizeFileName(stripMp4(requested)) || 'viralcut';
+
+  const mode = await askExportMode();
+  if (!mode) return null;
   const sources = [...new Map(items.map(it => [it.source.id, it.source])).values()];
   const fps = resolveExportFps(sources, p.output.fps || 30);
   if (!fps) return null;

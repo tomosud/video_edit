@@ -11,6 +11,7 @@ export {
   Input,
   Mp4OutputFormat,
   Output,
+  StreamTarget,
   canEncodeAudio,
   canEncodeVideo,
 } from '../lib/mediabunny.min.js';

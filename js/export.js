@@ -15,6 +15,7 @@ import {
   Input,
   Mp4OutputFormat,
   Output,
+  StreamTarget,
   canEncodeAudio,
   canEncodeVideo,
 } from './mediabunny.js';
@@ -209,7 +210,7 @@ export function exportProject(options = {}) {
   return runExport(options);
 }
 
-async function runExport({ width, height, fps: requestedFps, cropMode = 'vertical', onProgress, onStatus } = {}) {
+async function runExport({ width, height, fps: requestedFps, cropMode = 'vertical', onProgress, onStatus, writable } = {}) {
   const project = store.get();
   const items = outputItems(project);
   if (!items.length) throw new Error('No output clips to export');
@@ -232,7 +233,10 @@ async function runExport({ width, height, fps: requestedFps, cropMode = 'vertica
 
   onStatus?.(`Preparing encoder (${outW}x${outH} ${fps}fps ${codec}${audioCodec ? ` + ${audioCodec}` : ''})...`);
 
-  const target = new BufferTarget();
+  // Stream straight to disk when a writable is provided; BufferTarget keeps
+  // the whole MP4 in memory (~150MB/min at 1080x1920@60fps) and is only safe
+  // for short exports.
+  const target = writable ? new StreamTarget(writable, { chunked: true }) : new BufferTarget();
   const format = new Mp4OutputFormat();
   const output = new Output({ format, target });
   const canvas = document.createElement('canvas');
@@ -314,7 +318,11 @@ async function runExport({ width, height, fps: requestedFps, cropMode = 'vertica
     await output.finalize();
     onProgress?.(1);
     onStatus?.('Export complete');
-    return new Blob([target.buffer], { type: 'video/mp4' });
+    // StreamTarget commits and closes the writable itself during finalize.
+    return writable ? null : new Blob([target.buffer], { type: 'video/mp4' });
+  } catch (err) {
+    try { await output.cancel(); } catch { /* ignore */ }
+    throw err;
   } finally {
     for (const session of sessions.values()) {
       try { session.input.dispose(); } catch { /* ignore */ }
