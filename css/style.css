@@ -189,9 +189,12 @@ video {
   flex: 0 0 auto;
   flex-direction: column;
   justify-content: center;
+  position: relative;
   min-width: 214px;
   line-height: 1.1;
   color: #c9c9c9;
+  cursor: help;
+  outline: none;
 }
 .brand-title {
   font-size: 20px;
@@ -206,6 +209,33 @@ video {
   color: #b9b9b9;
   white-space: nowrap;
 }
+.brand-info {
+  display: none;
+  position: absolute;
+  z-index: 100;
+  top: calc(100% + 13px);
+  left: -12px;
+  width: min(520px, calc(100vw - 32px));
+  padding: 13px 15px;
+  border: 1px solid #454b59;
+  border-radius: 7px;
+  background: #20232a;
+  box-shadow: 0 12px 30px rgba(0,0,0,.5);
+  color: #d9dde5;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: normal;
+}
+.brand-info > span { display: block; }
+.brand-info > span + span {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #383d49;
+  color: #b9c2d1;
+}
+.brand:hover .brand-info,
+.brand:focus-visible .brand-info { display: block; }
 .repo-link {
   color: #b9c7de;
   border: 1px solid var(--line);

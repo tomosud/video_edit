@@ -38,6 +38,7 @@ export function init(elements, hooks = {}) {
   onSeek = hooks.seek || onSeek;
 
   listEl.addEventListener('wheel', onWheel, { passive: false });
+  listEl.addEventListener('pointerdown', onCaptionEditBoundaryPointerDown, true);
   listEl.addEventListener('pointerdown', onTimelinePointerDown);
   listEl.addEventListener('dblclick', onTimelineDblClick);
   listEl.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -65,6 +66,20 @@ export function init(elements, hooks = {}) {
   // pointermove during drags and a full DOM rebuild per event is wasted work.
   // Direct render() calls (wheel/pan/resize) stay synchronous.
   store.subscribe(scheduleRender);
+}
+
+function onCaptionEditBoundaryPointerDown(e) {
+  if (!editingCaptionId) return;
+  const captionBar = e.target.closest('.caption-bar');
+  if (captionBar?.dataset.id === editingCaptionId) return;
+
+  // A click on another caption ends the current text-edit session. The
+  // clicked caption's normal handler can still select it; editing it requires
+  // a fresh double-click after this boundary click.
+  editingCaptionId = null;
+  lastCaptionPress = null;
+  const active = document.activeElement;
+  if (active?.classList?.contains('caption-edit-textarea')) active.blur();
 }
 
 let renderRaf = 0;

@@ -12,36 +12,40 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/store.js":                   "./js/store.js?v=20260712ad",
-      "./js/db.js":                      "./js/db.js?v=20260712ad",
-      "./js/util.js":                    "./js/util.js?v=20260712ad",
-      "./js/fileOpen.js":                "./js/fileOpen.js?v=20260712ad",
-      "./js/mediaInfo.js":               "./js/mediaInfo.js?v=20260712ad",
-      "./js/mediaSession.js":            "./js/mediaSession.js?v=20260712ad",
-      "./js/mediabunny.js":              "./js/mediabunny.js?v=20260712ad",
-      "./js/thumbnails.js":              "./js/thumbnails.js?v=20260712ad",
-      "./js/sourceTimeline.js":          "./js/sourceTimeline.js?v=20260712ad",
-      "./js/frameStrip.js":              "./js/frameStrip.js?v=20260712ad",
-      "./js/materialShelf.js":           "./js/materialShelf.js?v=20260712ad",
-      "./js/outputSequenceTimeline.js":  "./js/outputSequenceTimeline.js?v=20260712ad",
-      "./js/captions.js":                "./js/captions.js?v=20260712ad",
-      "./js/drawing.js":                 "./js/drawing.js?v=20260712ad",
-      "./js/cropPreview.js":             "./js/cropPreview.js?v=20260712ad",
-      "./js/horizontalPreview.js":       "./js/horizontalPreview.js?v=20260712ad",
-      "./js/export.js":                  "./js/export.js?v=20260712ad",
+      "./js/store.js":                   "./js/store.js?v=20260712af",
+      "./js/db.js":                      "./js/db.js?v=20260712af",
+      "./js/util.js":                    "./js/util.js?v=20260712af",
+      "./js/fileOpen.js":                "./js/fileOpen.js?v=20260712af",
+      "./js/mediaInfo.js":               "./js/mediaInfo.js?v=20260712af",
+      "./js/mediaSession.js":            "./js/mediaSession.js?v=20260712af",
+      "./js/mediabunny.js":              "./js/mediabunny.js?v=20260712af",
+      "./js/thumbnails.js":              "./js/thumbnails.js?v=20260712af",
+      "./js/sourceTimeline.js":          "./js/sourceTimeline.js?v=20260712af",
+      "./js/frameStrip.js":              "./js/frameStrip.js?v=20260712af",
+      "./js/materialShelf.js":           "./js/materialShelf.js?v=20260712af",
+      "./js/outputSequenceTimeline.js":  "./js/outputSequenceTimeline.js?v=20260712af",
+      "./js/captions.js":                "./js/captions.js?v=20260712af",
+      "./js/drawing.js":                 "./js/drawing.js?v=20260712af",
+      "./js/cropPreview.js":             "./js/cropPreview.js?v=20260712af",
+      "./js/horizontalPreview.js":       "./js/horizontalPreview.js?v=20260712af",
+      "./js/export.js":                  "./js/export.js?v=20260712af",
       "./lib/mediabunny.min.js":         "./lib/mediabunny.min.js?v=mb-1"
     }
   }
   </script>
-  <link rel="stylesheet" href="css/style.css?v=20260712ad">
+  <link rel="stylesheet" href="css/style.css?v=20260712af">
 </head>
 <body>
   <div id="app">
 
     <header id="menu">
-      <span class="brand">
+      <span class="brand" tabindex="0" aria-describedby="brandInfo">
         <span class="brand-title">Disposable Video Editor</span>
         <span class="brand-subtitle">使いすて動画エディター</span>
+        <span id="brandInfo" class="brand-info" role="tooltip">
+          <span lang="ja">ブラウザだけで動く、シンプルな動画編集アプリ。<br>複数の動画から欲しい部分を切り出して並べ、字幕付きの縦（9:16）・横（16:9）の MP4 を書き出せます。<br><br>プロジェクトはブラウザの中に15個まで保存され、いずれ消えます。</span>
+          <span lang="en">A simple video editor that runs entirely in your browser.<br>Cut the parts you want from multiple videos, arrange them, and export captioned vertical (9:16) and horizontal (16:9) MP4s.<br><br>Up to 15 projects are stored in your browser. They are temporary and will eventually be deleted.</span>
+        </span>
       </span>
       <a class="repo-link" href="https://github.com/tomosud/video_edit" target="_blank" rel="noopener">GitHub</a>
       <button id="btnNewProject" class="btn">🗂 New/Sessions</button>
@@ -201,6 +205,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260712ad"></script>
+  <script type="module" src="js/app.js?v=20260712af"></script>
 </body>
 </html>
