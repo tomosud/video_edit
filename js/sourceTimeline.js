@@ -23,6 +23,7 @@ let playRaf = 0;                 // rAF id for smooth playhead while playing
 let _sourcePreview = () => {};
 let overviewLayoutRaf = 0;
 let overviewResizeObserver = null;
+let pendingTitleFocusId = null;
 
 export function init(elements, videoEl) {
   els = elements;
@@ -91,6 +92,7 @@ function editingIds() {
 
 function setEditingMaterials(ids) {
   const unique = [...new Set(ids.filter(Boolean))];
+  pendingTitleFocusId = unique[0] || null;
   store.setUI({ editMaterialIds: unique, editMaterialId: unique[0] || null });
 }
 
@@ -577,10 +579,69 @@ function renderBands() {
     const visibleRight = Math.min(W, x2);
     const labelX = Math.max(0, Math.min(Math.max(2, x2 - x1), (visibleLeft + visibleRight) / 2 - x1));
     el.style.setProperty('--edit-label-x', labelX + 'px');
-    el.innerHTML =
-      `<div class="h l"></div><div class="lbl">${fmtTime(m.out - m.in)}</div><div class="h r"></div>`;
+    const leftHandle = document.createElement('div');
+    leftHandle.className = 'h l';
+    const label = document.createElement('div');
+    label.className = 'lbl';
+    label.textContent = fmtTime(m.out - m.in);
+    const rightHandle = document.createElement('div');
+    rightHandle.className = 'h r';
+    el.append(leftHandle, label, rightHandle);
+    if (editSet.has(m.id)) el.appendChild(titleInput(m));
     els.bands.appendChild(el);
   }
+}
+
+function titleInput(m) {
+  const input = document.createElement('input');
+  input.className = 'clip-title-input';
+  input.type = 'text';
+  input.value = (m.title || '').trim();
+  input.placeholder = 'Label';
+  input.title = 'Cut stock label';
+  const original = input.value;
+  let cancelled = false;
+
+  input.addEventListener('pointerdown', (e) => e.stopPropagation());
+  input.addEventListener('click', (e) => e.stopPropagation());
+  input.addEventListener('dblclick', (e) => e.stopPropagation());
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      input.blur();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelled = true;
+      input.value = original;
+      input.blur();
+    }
+  });
+  input.addEventListener('blur', () => {
+    if (!cancelled) setMaterialTitle(m.id, input.value);
+  });
+
+  if (pendingTitleFocusId === m.id) {
+    pendingTitleFocusId = null;
+    requestAnimationFrame(() => {
+      if (!document.body.contains(input)) return;
+      input.focus();
+      input.select();
+    });
+  }
+  return input;
+}
+
+function setMaterialTitle(id, value) {
+  const m = store.getMaterial(id);
+  if (!m) return;
+  const trimmed = value.trim();
+  if ((m.title || '') === trimmed || (!m.title && !trimmed)) return;
+  store.update((p) => {
+    const target = p.materials.find(x => x.id === id);
+    if (!target) return;
+    if (trimmed) target.title = trimmed;
+    else delete target.title;
+  });
 }
 
 function positionPlayhead(t) {

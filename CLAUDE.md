@@ -1,31 +1,31 @@
 # ViralCut Development Rules
 
-このリポジトリで開発する人間 / AI アシスタント向けのルール。
+Rules for humans and AI assistants working in this repository.
 
-## 役割分担
+## Responsibilities
 
-- git のコミット・プッシュはユーザーが行う。アシスタントはコード変更、コメント追加、ドキュメント追記までに留め、指示なくコミットしない。
-- ブラウザでの実機確認はユーザーが行う。アシスタントは必要な静的チェックや Node での構文チェック、ブラウザ非依存ロジックの検証までを担当し、実ブラウザでの見た目や動画操作確認はユーザーに依頼する。
-- ローカル起動はルートの `run_local.bat` を使う。既定 URL は `http://localhost:8000`。
-- ViralCut はブラウザ内で完結する軽量編集ツールとする。プロジェクトフォルダへの保存・Open・ファイルハンドル保存の仕様は再導入しない。
+- The user handles git commits and pushes. The assistant may change code, add comments, and update documentation, but must not commit unless explicitly instructed.
+- Browser-based verification is handled by the user. The assistant should run static checks, Node syntax checks, and browser-independent logic checks where useful. Visual checks and real video interaction checks in an actual browser should be left to the user.
+- Use the root `run_local.bat` script for local startup. The default URL is `http://localhost:8000`.
+- ViralCut must remain a lightweight editor that runs entirely in the browser. Do not reintroduce project-folder saves, Open flows, or file-handle save behavior.
 
-## 技術条件
+## Technical Requirements
 
-- GitHub Pages でホストできる静的構成のみを維持する。ビルド工程やサーバサイド処理を持ち込まない。
-- Vanilla JavaScript ES modules、HTML、CSS の既存構成を優先する。
-- 編集状態と追加動画 File は IndexedDB に autosave し、reload で復元する。ファイルシステム上のプロジェクトフォルダは作らない。
-- 商用利用可能なライセンスのみを使う。外部ライブラリ、外部モデル、weights などを導入する場合は、導入前にライセンスを確認し、README.md が存在する場合は README.md に、存在しない場合は PROJECT_STATUS.md に記載する。
+- Keep the app as a static site that can be hosted on GitHub Pages. Do not add a build step or server-side processing.
+- Prefer the existing Vanilla JavaScript ES modules, HTML, and CSS structure.
+- Editing state and added video `File` objects are autosaved to IndexedDB and restored on reload. Do not create project folders on the filesystem.
+- Use only licenses that allow commercial use. Before adding external libraries, external models, weights, or similar dependencies, verify the license and document it in `README.md` if that file exists, otherwise in `PROJECT_STATUS.md`.
 
-## 進め方
+## Workflow
 
-- トークンを節約し、段階的に開発する。一度に大きく変えず、1 ステップずつ検証してから次へ進む。
-- root の Markdown を増やしすぎない。原則として `CLAUDE.md` と `PROJECT_STATUS.md` を中心にし、新しい計画専用 md はユーザーが明示した場合だけ作る。
-- 仕様と履歴を分ける。現行仕様や現在状況は `PROJECT_STATUS.md` に集約し、失敗案、検討ログ、旧仕様は root に残さない。
-- `PROJECT_STATUS.md` は現在状況だけに保つ。長い実装ログや試行錯誤を追記し続けず、現行構成、実装済み、確認待ち、直近変更の短い要約に留める。
-- ブラウザ非依存のロジックは Node の合成テストや `node --check` で検証してから結線する。実動画での見た目や操作感の確認はユーザーのブラウザテストに委ねる。
-- js/css を変更したら `index.html` 内のバージョン文字列（importmap・script・link の `?v=...`、全行同一値）を一括置換で更新する。`js/` 内の import 文にはクエリを付けない。
+- Save tokens and develop incrementally. Avoid large changes in one pass; verify each step before moving on.
+- Do not add too many Markdown files at the repository root. As a rule, keep project notes centered on `CLAUDE.md` and `PROJECT_STATUS.md`. Create new planning-only Markdown files only when the user explicitly asks.
+- Separate current specifications from history. Current behavior and status belong in `PROJECT_STATUS.md`. Do not keep failed approaches, exploration logs, or old specifications at the repository root.
+- Keep `PROJECT_STATUS.md` focused on the current state. Do not keep appending long implementation logs or trial-and-error notes. Limit it to the current structure, implemented behavior, pending verification, and short summaries of recent changes.
+- Verify browser-independent logic with Node-based synthetic tests or `node --check` before wiring it into the app. Real video appearance and interaction checks are the user's browser-test responsibility.
+- When changing JS or CSS, update the version string in `index.html` for every importmap, script, and stylesheet `?v=...` entry. All such entries should use the same value. Do not add query strings to imports inside `js/` files.
 
-## エンコーディング
+## Encoding
 
-- 文字化けした状態で読めたつもりになって進めない。`CLAUDE.md`、ソース、md を読む際に日本語コメントや本文が文字化けして見える場合は、まず UTF-8 を明示するなど読み取り方法を変えて、正常に読めるまで試す。
-- エンコーディングを変えても内容を確認できない場合は処理を止める。推測で編集や実装を続けず、どのファイルが読めないかと試した方法をユーザーに報告して指示を待つ。
+- Do not proceed as if a file was read correctly when the text is mojibake or otherwise garbled. If Japanese comments or Markdown text appear corrupted while reading `CLAUDE.md`, source files, or Markdown files, first change the reading method, such as explicitly using UTF-8, until the content is readable.
+- If changing the encoding or read method still does not make the content readable, stop. Do not continue editing or implementing based on guesses. Report which file could not be read and which methods were tried, then wait for the user's instruction.

@@ -387,6 +387,9 @@ function createCaptionAt(clientX) {
 }
 
 function beginCaptionTextEdit(captionId) {
+  if (editingCaptionId && editingCaptionId !== captionId) {
+    closeCaptionTextEdit();
+  }
   if (store.ui.selectedCaptionId !== captionId || store.ui.selection.kind) {
     selectCaption(captionId);
     requestAnimationFrame(() => mountCaptionTextEdit(captionId));
@@ -395,9 +398,20 @@ function beginCaptionTextEdit(captionId) {
   mountCaptionTextEdit(captionId);
 }
 
+function closeCaptionTextEdit() {
+  if (!editingCaptionId && !listEl?.querySelector('.caption-edit-panel')) return;
+  editingCaptionId = null;
+  render();
+}
+
 function mountCaptionTextEdit(captionId) {
   const found = findCaption(store.get(), captionId);
   if (!found) return;
+  if (editingCaptionId && editingCaptionId !== captionId) {
+    closeCaptionTextEdit();
+    requestAnimationFrame(() => mountCaptionTextEdit(captionId));
+    return;
+  }
   const bar = listEl.querySelector(`.caption-bar[data-id="${captionId}"]`);
   if (!bar) return;
   const existing = bar.querySelector('.caption-edit-panel textarea');
@@ -450,6 +464,7 @@ function mountCaptionTextEdit(captionId) {
     });
     textarea.addEventListener('blur', () => {
       requestAnimationFrame(() => {
+        if (editingCaptionId !== captionId) return;
         if (panel.contains(document.activeElement)) return;
         editingCaptionId = null;
         render();
