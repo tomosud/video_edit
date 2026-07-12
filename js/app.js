@@ -952,6 +952,7 @@ async function askSessionChoice(initialSessions) {
       const updated = s.updatedAt || s.savedAt || 0;
       const date = updated ? new Date(updated).toLocaleString() : '';
       const brightness = sessionBrightness(index, sessions.length);
+      const exportName = s.exportName || s.project?.exportName || '';
       const thumb = s.thumbnail
         ? `<img src="${escapeAttr(s.thumbnail)}" alt="">`
         : '<span>No thumbnail</span>';
@@ -959,7 +960,7 @@ async function askSessionChoice(initialSessions) {
         <div class="session-choice" data-session-id="${escapeAttr(s.id)}" style="--session-brightness:${brightness}">
           <span class="session-choice-thumb" data-session-open="${escapeAttr(s.id)}">${thumb}</span>
           <button class="session-choice-open" type="button" data-session-open="${escapeAttr(s.id)}">
-            <span class="session-choice-title">${escapeHtml((s.name || 'Untitled edit') + (s.exportName ? ` · ${s.exportName}` : ''))}</span>
+            <span class="session-choice-title">${escapeHtml((s.name || 'Untitled edit') + (exportName ? ` · ${exportName}` : ''))}</span>
             <span class="session-choice-meta">${escapeHtml(date)} / ${formatBytes(s.bytes || 0)} / ${s.outputCount || 0} cuts</span>
           </button>
           <button class="session-delete-btn" type="button" data-session-delete="${escapeAttr(s.id)}">Delete</button>

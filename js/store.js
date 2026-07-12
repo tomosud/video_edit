@@ -184,6 +184,7 @@ class Store {
       savedAt: now,
       updatedAt: now,
       name: sessionName(this.project),
+      exportName: this.project.exportName || '',
       sourceCount: this.project.sources.length,
       materialCount: this.project.materials.length,
       outputCount: this.project.outputs.length,
