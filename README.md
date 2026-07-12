@@ -1,13 +1,15 @@
-# ViralCut
+# Disposable Video Editor / 使いすて動画エディター
 
 https://tomosud.github.io/video_edit/
 
 ブラウザだけで動く、シンプルな動画編集アプリ。
-動画から欲しい部分を切り出して並べ、縦(9:16)・横(16:9)の MP4 を書き出せます。
-動画はどこにもアップロードされず、すべて手元のブラウザ内で処理されます。
+複数の動画から欲しい部分を切り出して並べ、字幕付きの縦(9:16)・横(16:9)の MP4 を書き出せます。
+
+プロジェクトはブラウザの中に、15個まで保存され、いずれ消えます。
 
 A simple video editor that runs entirely in your browser.
 Cut out the parts you want, arrange them, and export vertical (9:16) and horizontal (16:9) MP4s.
+
 Your videos never leave your computer.
 
 
