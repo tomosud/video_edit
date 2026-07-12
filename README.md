@@ -15,7 +15,7 @@ https://github.com/user-attachments/assets/953d0831-4a85-46a3-9171-0978622b70f7
 
 
 
-<img width="1919" height="944" alt="image" src="https://github.com/user-attachments/assets/8fd3fe4a-0bbe-43e3-bf6a-ddc79d86a251" />
+<img width="1915" height="951" alt="image" src="https://github.com/user-attachments/assets/90c6eda1-7708-480c-a4f0-5a37afa880f0" />
 
 
 ## 使い方
