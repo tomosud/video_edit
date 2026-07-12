@@ -87,13 +87,6 @@ async function chooseAudioCodec(sampleRate, numberOfChannels, bitrate) {
   return null;
 }
 
-async function getFrameCanvas(session, sourceFps, sourceFrame) {
-  const t = Math.max(0, sourceFrame / sourceFps);
-  const wrapped = await session.videoSink.getCanvas(t);
-  if (!wrapped?.canvas) throw new Error(`Failed to read frame: ${sourceFrame}`);
-  return wrapped.canvas;
-}
-
 // Fixed export audio format. Mediabunny's AudioSampleSource requires every
 // input sample to share one sampleRate/channel layout for the whole track,
 // while clips can freely mix mono/stereo and 44.1k/48k sources - so every
@@ -275,20 +268,29 @@ export async function exportProject({ width, height, fps: requestedFps, cropMode
         else await addSilentClip(audioSource, it.bounds.frameCount / fps, outTime);
       }
 
+      // Map each output frame to a source timestamp, then decode sequentially:
+      // canvasesAtTimestamps pipelines the decoder, unlike per-frame getCanvas
+      // which seeks on every call. Timestamps are monotonically non-decreasing.
+      const timestamps = new Array(it.bounds.frameCount);
       for (let localFrame = 0; localFrame < it.bounds.frameCount; localFrame++) {
         const sourceFrame = clamp(
           Math.round((it.bounds.inTime + localFrame / fps) * it.bounds.sourceFps),
           it.bounds.inFrame,
           it.bounds.outFrame - 1,
         );
-        const sourceCanvas = await getFrameCanvas(session, it.bounds.sourceFps, sourceFrame);
-        const crop = cropForItem(it, cropMode);
-        if (cropMode === 'horizontal') drawHorizontalFrame(ctx, sourceCanvas, outW, outH, crop);
-        else drawVerticalFrame(ctx, sourceCanvas, outW, outH, crop);
+        timestamps[localFrame] = Math.max(0, sourceFrame / it.bounds.sourceFps);
+      }
+      const crop = cropForItem(it, cropMode);
+      let localFrame = 0;
+      for await (const wrapped of session.videoSink.canvasesAtTimestamps(timestamps)) {
+        if (!wrapped?.canvas) throw new Error(`Failed to read frame at ${timestamps[localFrame]}s`);
+        if (cropMode === 'horizontal') drawHorizontalFrame(ctx, wrapped.canvas, outW, outH, crop);
+        else drawVerticalFrame(ctx, wrapped.canvas, outW, outH, crop);
         drawCaption(ctx, outW, outH, activeCaptionText(project, Math.round((outTime + localFrame / fps) * 1000)));
         await canvasSource.add(outFrame / fps, frameDur);
 
         outFrame++;
+        localFrame++;
         if ((outFrame & 7) === 0 || outFrame === totalFrames) {
           onProgress?.(Math.min(1, outFrame / totalFrames));
           await nextBreath();

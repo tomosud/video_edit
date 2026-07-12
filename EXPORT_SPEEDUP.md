@@ -12,7 +12,11 @@
 
 ---
 
-## Stage 1: デコードの逐次イテレータ化(最重要・速度)
+## Stage 1: デコードの逐次イテレータ化(最重要・速度) ✅ 完了 (2026-07-12)
+
+実装済み: `getFrameCanvas()` を削除し、クリップごとに出力フレーム→ソースタイムスタンプ列を
+事前生成して `videoSink.canvasesAtTimestamps(timestamps)` の `for await` で逐次デコードに変更。
+`cropForItem` はクリップ単位で不変のためループ外へ移動。キャッシュバスター 20260712s → 20260712t。
 
 **問題**: `getFrameCanvas()` が出力フレームごとに `videoSink.getCanvas(t)` を呼ぶ。
 これは単発シーク用 API で、毎回シーク+デコードのラウンドトリップが発生し
