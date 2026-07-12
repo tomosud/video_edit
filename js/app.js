@@ -76,18 +76,12 @@ async function bootstrap() {
   // Never let a storage failure (blocked IndexedDB, corrupt session, ...)
   // leave the app dead on load; fall back to an empty in-memory edit.
   try {
-    const requested = urlSessionId();
+    removeLegacySessionParam();
     let restored = false;
-    if (requested) {
-      store.setSessionId(requested);
-      restored = await store.restore(requested);
-    } else {
-      const latest = await db.latestSession().catch(() => null);
-      const sessionId = latest?.id || makeSessionId();
-      setUrlSession(sessionId);
-      store.setSessionId(sessionId);
-      restored = latest ? await store.restore(sessionId) : await store.restoreLegacyAutosave();
-    }
+    const latest = await db.latestSession().catch(() => null);
+    const sessionId = latest?.id || makeSessionId();
+    store.setSessionId(sessionId);
+    restored = latest ? await store.restore(sessionId) : await store.restoreLegacyAutosave();
 
     if (restored) {
       const mediaRestored = await fileOpen.restoreSavedMedia();
@@ -159,7 +153,6 @@ async function openSession(sessionId, { restore }) {
   fileOpen.clear();
   disposeMediaSessions();
   store.setSessionId(sessionId);
-  setUrlSession(sessionId);
   const restored = restore && await store.restore(sessionId);
   if (restored) {
     const mediaRestored = await fileOpen.restoreSavedMedia();
@@ -173,13 +166,10 @@ async function openSession(sessionId, { restore }) {
   updatePlayInfo();
 }
 
-function urlSessionId() {
-  return new URL(location.href).searchParams.get('session');
-}
-
-function setUrlSession(sessionId) {
+function removeLegacySessionParam() {
   const url = new URL(location.href);
-  url.searchParams.set('session', sessionId);
+  if (!url.searchParams.has('session')) return;
+  url.searchParams.delete('session');
   history.replaceState(null, '', url);
 }
 
@@ -981,7 +971,7 @@ async function askSessionChoice(initialSessions) {
       </div>
       <button class="session-choice session-choice-new" type="button" data-session-open="new">
         <span class="session-choice-title">New Session</span>
-        <span class="session-choice-meta">Create a new temporary URL session</span>
+        <span class="session-choice-meta">Create a new temporary browser session</span>
       </button>
       <div class="session-picker-list">${rows || '<div class="session-picker-empty">No saved sessions</div>'}</div>
       <div class="session-picker-actions"><button class="btn btn-sm" type="button" data-session-cancel>Cancel</button></div>`;
@@ -1004,12 +994,12 @@ async function askSessionChoice(initialSessions) {
         const id = del.dataset.sessionDelete;
         const session = sessions.find(s => s.id === id);
         if (!window.confirm(`Delete this temporary session?\n${session?.name || 'Untitled edit'}`)) return;
-        await db.deleteSession(id);
+        const remaining = await db.deleteSession(id);
         if (id === store.sessionId) {
           finish('new');
           return;
         }
-        sessions = await withSessionSizes(await db.listSessions().catch(() => []));
+        sessions = await withSessionSizes(remaining);
         render();
         return;
       }

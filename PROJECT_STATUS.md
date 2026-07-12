@@ -22,6 +22,7 @@ ViralCut is a browser-only lightweight video editing tool.
 ViralCut no longer has a project-folder save/open workflow.
 
 - Editing state is autosaved to IndexedDB under the `viralcut` database.
+- Session IDs are internal browser state and are not written into the page URL. Legacy `?session=...` parameters are removed on startup.
 - Added media `File` objects are also stored in IndexedDB when the browser allows it.
 - Reload restores the last edit and re-registers saved media object URLs.
 - `New` asks twice when work exists, then clears autosave, history, saved media, and in-memory object URLs.
@@ -29,6 +30,7 @@ ViralCut no longer has a project-folder save/open workflow.
 - Video and image files can be added by clicking `Add Video` or by dropping them on the `Add Video` button.
 - Export layout is selected with buttons after pressing `ExportVideo`: vertical 9:16, horizontal 16:9, or both.
 - Each caption can be switched to `Title` from its text-edit panel. Titles render large at screen center without the caption background box in previews and exports.
+- Deleting the final saved session deletes the entire `viralcut` IndexedDB database, including stores and cached data left by older specifications.
 
 ## Current Architecture
 

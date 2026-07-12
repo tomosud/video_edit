@@ -15,7 +15,15 @@ function open() {
         if (!db.objectStoreNames.contains(s)) db.createObjectStore(s);
       }
     };
-    req.onsuccess = () => { _db = req.result; resolve(_db); };
+    req.onsuccess = () => {
+      const db = req.result;
+      _db = db;
+      db.onversionchange = () => {
+        db.close();
+        if (_db === db) _db = null;
+      };
+      resolve(db);
+    };
     req.onerror = () => reject(req.error);
   });
 }
@@ -110,6 +118,25 @@ export async function deleteSession(sessionId) {
     del('sessionHistory', sessionId),
     deleteSessionMedia(sessionId),
   ]);
+  const remaining = await listSessions();
+  if (!remaining.length) await deleteEntireDatabase();
+  return remaining;
+}
+
+// Removing the database, rather than clearing only current stores, also
+// removes data left by older app versions (autosave, handles, models, thumbs,
+// legacy media/history, and any other stores in the same database).
+export function deleteEntireDatabase() {
+  if (_db) {
+    _db.close();
+    _db = null;
+  }
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.deleteDatabase(DB_NAME);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error || new Error(`Could not delete IndexedDB database: ${DB_NAME}`));
+    req.onblocked = () => reject(new Error('Could not delete browser data because ViralCut is open in another tab'));
+  });
 }
 
 export async function clearSessionMedia(sessionId) {
@@ -155,4 +182,3 @@ function jsonBytes(value) {
     return 0;
   }
 }
-
