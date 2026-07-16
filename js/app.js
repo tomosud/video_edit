@@ -26,8 +26,8 @@ const el = {};
  'srcPane','tlScroll','tlInner','thumbRow','clipBands','tlPlayhead','frameStrip','srcRange',
  'tlOverview','ovThumbRow','ovClips','ovWindow','ovPlayhead',
  'seekBar','seekMarks','seekRange','seekFill','seekHead','frameInfo',
- 'workPane','shelf','shelfCount','outList','captionEditor','totalDur','btnPlayOut','btnStopOut',
- 'btnAutoTranslate'].forEach(id => el[id] = $(id));
+ 'app','workPane','shelf','shelfCount','outPane','outList','captionEditor','totalDur','btnPlayOut','btnStopOut',
+ 'btnAutoTranslate','editPaneSplitter'].forEach(id => el[id] = $(id));
 
 let activeUrl = null;
 let pendingSeek = null;
@@ -61,7 +61,16 @@ function init() {
   frameStrip.init(el.frameStrip, el.srcVideo, { sourcePreview: activateSourcePreview });
   shelf.init({ shelf: el.shelf, count: el.shelfCount }, { play: playRange });
   outSeq.init({ list: el.outList, captionEditor: el.captionEditor, total: el.totalDur, video: el.srcVideo }, { play: playOutputFrom, seek: seekOutputTime });
-  browserTranslation.init({ button: el.btnAutoTranslate, root: el.outList, status: setStatus });
+  browserTranslation.init({
+    button: el.btnAutoTranslate,
+    root: el.outList,
+    status: setStatus,
+    confirmEnable: () => askConfirm(
+      'Primary will be copied to Second.\nExisting Second text will be replaced.\nAfter copying, enable your browser translation feature.',
+      'Run',
+      'Enable Auto Translate?',
+    ),
+  });
   srcTimeline.onPlayRange(playRange);
   srcTimeline.onSourcePreview(activateSourcePreview);
   store.setSessionMetaProvider(sessionMeta);
@@ -796,6 +805,27 @@ function wireWorkspaceSplitters() {
   const splitters = [...document.querySelectorAll('.pane-splitter')];
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
   let drag = null;
+  let editRowDrag = null;
+
+  const editHeightBounds = () => {
+    const appStyle = getComputedStyle(el.app);
+    const gap = parseFloat(appStyle.rowGap) || 0;
+    const padding = (parseFloat(appStyle.paddingTop) || 0) + (parseFloat(appStyle.paddingBottom) || 0);
+    const gridHeight = Math.max(0, el.app.clientHeight - padding);
+    const fixedHeight = document.getElementById('menu').getBoundingClientRect().height
+      + el.srcPane.getBoundingClientRect().height
+      + el.editPaneSplitter.getBoundingClientRect().height
+      + gap * 4;
+    const compact = el.app.clientHeight <= 760;
+    const minEdit = compact ? 125 : 160;
+    const minWork = compact ? 100 : 150;
+    return { min: minEdit, max: Math.max(minEdit, gridHeight - fixedHeight - minWork) };
+  };
+
+  const setEditPaneHeight = (height) => {
+    const bounds = editHeightBounds();
+    el.app.style.setProperty('--edit-pane-height', Math.round(clamp(height, bounds.min, bounds.max)) + 'px');
+  };
 
   const fitMonitorColumns = () => {
     if (workspaceLayoutManual || !el.workPane || !el.origPane || !el.vertPane) return;
@@ -840,7 +870,29 @@ function wireWorkspaceSplitters() {
     });
   }
 
+  el.editPaneSplitter.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    editRowDrag = {
+      startY: e.clientY,
+      startHeight: el.outPane.getBoundingClientRect().height,
+      pointerId: e.pointerId,
+    };
+    el.editPaneSplitter.classList.add('dragging');
+    try { el.editPaneSplitter.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  });
+  el.editPaneSplitter.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    el.app.style.removeProperty('--edit-pane-height');
+    window.dispatchEvent(new Event('resize'));
+  });
+
   window.addEventListener('pointermove', (e) => {
+    if (editRowDrag) {
+      setEditPaneHeight(editRowDrag.startHeight - (e.clientY - editRowDrag.startY));
+      window.dispatchEvent(new Event('resize'));
+      return;
+    }
     if (!drag) return;
     const dx = e.clientX - drag.startX;
     if (drag.kind === 'materials') {
@@ -854,10 +906,20 @@ function wireWorkspaceSplitters() {
   });
 
   window.addEventListener('pointerup', (e) => {
+    if (editRowDrag) {
+      try { el.editPaneSplitter.releasePointerCapture(editRowDrag.pointerId); } catch { /* ignore */ }
+      el.editPaneSplitter.classList.remove('dragging');
+      editRowDrag = null;
+    }
     if (!drag) return;
     try { drag.el.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     drag.el.classList.remove('dragging');
     drag = null;
+  });
+
+  window.addEventListener('resize', () => {
+    const manualHeight = parseFloat(el.app.style.getPropertyValue('--edit-pane-height'));
+    if (Number.isFinite(manualHeight)) setEditPaneHeight(manualHeight);
   });
 }
 

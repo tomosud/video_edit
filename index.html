@@ -12,30 +12,30 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/store.js":                   "./js/store.js?v=20260716b",
-      "./js/db.js":                      "./js/db.js?v=20260716b",
-      "./js/util.js":                    "./js/util.js?v=20260716b",
-      "./js/fileOpen.js":                "./js/fileOpen.js?v=20260716b",
-      "./js/imageVideo.js":              "./js/imageVideo.js?v=20260716b",
-      "./js/mediaInfo.js":               "./js/mediaInfo.js?v=20260716b",
-      "./js/mediaSession.js":            "./js/mediaSession.js?v=20260716b",
-      "./js/mediabunny.js":              "./js/mediabunny.js?v=20260716b",
-      "./js/thumbnails.js":              "./js/thumbnails.js?v=20260716b",
-      "./js/sourceTimeline.js":          "./js/sourceTimeline.js?v=20260716b",
-      "./js/frameStrip.js":              "./js/frameStrip.js?v=20260716b",
-      "./js/materialShelf.js":           "./js/materialShelf.js?v=20260716b",
-      "./js/outputSequenceTimeline.js":  "./js/outputSequenceTimeline.js?v=20260716b",
-      "./js/captions.js":                "./js/captions.js?v=20260716b",
-      "./js/browserTranslation.js":      "./js/browserTranslation.js?v=20260716b",
-      "./js/drawing.js":                 "./js/drawing.js?v=20260716b",
-      "./js/cropPreview.js":             "./js/cropPreview.js?v=20260716b",
-      "./js/horizontalPreview.js":       "./js/horizontalPreview.js?v=20260716b",
-      "./js/export.js":                  "./js/export.js?v=20260716b",
-      "./lib/mediabunny.min.js":         "./lib/mediabunny.min.js?v=20260716b"
+      "./js/store.js":                   "./js/store.js?v=20260716d",
+      "./js/db.js":                      "./js/db.js?v=20260716d",
+      "./js/util.js":                    "./js/util.js?v=20260716d",
+      "./js/fileOpen.js":                "./js/fileOpen.js?v=20260716d",
+      "./js/imageVideo.js":              "./js/imageVideo.js?v=20260716d",
+      "./js/mediaInfo.js":               "./js/mediaInfo.js?v=20260716d",
+      "./js/mediaSession.js":            "./js/mediaSession.js?v=20260716d",
+      "./js/mediabunny.js":              "./js/mediabunny.js?v=20260716d",
+      "./js/thumbnails.js":              "./js/thumbnails.js?v=20260716d",
+      "./js/sourceTimeline.js":          "./js/sourceTimeline.js?v=20260716d",
+      "./js/frameStrip.js":              "./js/frameStrip.js?v=20260716d",
+      "./js/materialShelf.js":           "./js/materialShelf.js?v=20260716d",
+      "./js/outputSequenceTimeline.js":  "./js/outputSequenceTimeline.js?v=20260716d",
+      "./js/captions.js":                "./js/captions.js?v=20260716d",
+      "./js/browserTranslation.js":      "./js/browserTranslation.js?v=20260716d",
+      "./js/drawing.js":                 "./js/drawing.js?v=20260716d",
+      "./js/cropPreview.js":             "./js/cropPreview.js?v=20260716d",
+      "./js/horizontalPreview.js":       "./js/horizontalPreview.js?v=20260716d",
+      "./js/export.js":                  "./js/export.js?v=20260716d",
+      "./lib/mediabunny.min.js":         "./lib/mediabunny.min.js?v=20260716d"
     }
   }
   </script>
-  <link rel="stylesheet" href="css/style.css?v=20260716b">
+  <link rel="stylesheet" href="css/style.css?v=20260716d">
 </head>
 <body>
   <div id="app" translate="no">
@@ -147,14 +147,16 @@
       </div>
     </section>
 
+    <div id="editPaneSplitter" class="edit-pane-splitter" title="Drag to resize Edit area / double-click to reset"></div>
+
     <section id="outPane" class="pane area-pane" data-area="edit">
       <div class="pane-head">
         <span class="step-title"><span class="step-badge">3</span><span class="head-icon">🎞</span><span>Edit</span></span>
         <button id="btnPlayOut" class="btn btn-sm" disabled title="Play from start">▶ From Start</button>
         <button id="btnStopOut" class="btn btn-sm" disabled title="Pause or resume">⏸ Pause</button>
-        <button id="btnAutoTranslate" class="btn btn-sm btn-auto-translate" type="button" aria-pressed="false">🌐 Auto: Off</button>
         <span class="hint">Wheel to zoom / right-drag to pan / drag playhead / double-click empty caption lane to add / double-click caption to type</span>
         <span class="spacer"></span>
+        <button id="btnAutoTranslate" class="btn btn-sm btn-auto-translate" type="button" aria-pressed="false">🌐 Auto: Off</button>
         <span id="totalDur" class="time">Total 0:00</span>
       </div>
       <div id="outList" class="out-list">
@@ -208,6 +210,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260716b"></script>
+  <script type="module" src="js/app.js?v=20260716d"></script>
 </body>
 </html>

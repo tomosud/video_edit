@@ -48,9 +48,31 @@ video {
 #app {
   height: 100vh;
   display: grid;
-  grid-template-rows: 50px 220px minmax(0, 1fr) 210px;
+  grid-template-rows: 50px 220px minmax(150px, 1fr) 6px minmax(160px, var(--edit-pane-height, 210px));
   gap: 8px;
   padding: 8px;
+}
+
+.edit-pane-splitter {
+  position: relative;
+  cursor: row-resize;
+  touch-action: none;
+  z-index: 12;
+}
+.edit-pane-splitter::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 1px;
+  bottom: 1px;
+  border-radius: 4px;
+  background: rgba(255,255,255,.1);
+}
+.edit-pane-splitter:hover::after,
+.edit-pane-splitter.dragging::after {
+  background: rgb(var(--area-edit-rgb) / .62);
+  box-shadow: 0 0 8px rgb(var(--area-edit-rgb) / .32);
 }
 
 /* ===== Buttons / inputs ===== */
@@ -1137,7 +1159,8 @@ video {
 }
 .caption-kind-toggle {
   position: absolute;
-  top: calc(100% + 4px);
+  top: auto;
+  bottom: calc(100% + 5px);
   right: 0;
   min-width: 64px;
   height: 23px;
@@ -1550,7 +1573,7 @@ video {
 }
 @media (max-height: 760px) {
   #app {
-    grid-template-rows: 42px 180px minmax(0, 1fr) 170px;
+    grid-template-rows: 42px 180px minmax(100px, 1fr) 6px minmax(125px, var(--edit-pane-height, 170px));
     gap: 5px;
     padding: 6px;
   }

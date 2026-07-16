@@ -7,20 +7,22 @@ const TRANSLATION_EVENT = 'viralcut:caption-translation';
 let buttonEl = null;
 let rootEl = null;
 let onStatus = () => {};
+let confirmEnable = async () => true;
 let enabled = false;
 let observer = null;
 let applyTimer = 0;
 let syncTimer = 0;
 let copiedSourceById = new Map();
 
-export function init({ button, root, status } = {}) {
+export function init({ button, root, status, confirmEnable: confirm } = {}) {
   buttonEl = button || null;
   rootEl = root || null;
   onStatus = typeof status === 'function' ? status : () => {};
+  confirmEnable = typeof confirm === 'function' ? confirm : async () => true;
   if (!buttonEl || !rootEl) return;
 
   observer = new MutationObserver(scheduleCapture);
-  buttonEl.addEventListener('click', toggle);
+  buttonEl.addEventListener('click', () => { void toggle(); });
   store.subscribe(scheduleCopySync);
   updateButton();
 }
@@ -29,7 +31,8 @@ export function isEnabled() {
   return enabled;
 }
 
-function toggle() {
+async function toggle() {
+  if (!enabled && !(await confirmEnable())) return;
   enabled = !enabled;
   clearTimeout(applyTimer);
   clearTimeout(syncTimer);
