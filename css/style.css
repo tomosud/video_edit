@@ -840,6 +840,29 @@ video {
   box-shadow: inset 0 0 0 1px rgb(var(--area-stock-rgb) / .65);
 }
 #vertCanvas, #horizCanvas { height: 100%; max-width: 100%; background: #000; display: block; }
+#vertCanvas.title-position-editable,
+#horizCanvas.title-position-editable { cursor: default; }
+#vertCanvas.title-position-hover,
+#horizCanvas.title-position-hover { cursor: grab; }
+#vertCanvas.title-position-dragging,
+#horizCanvas.title-position-dragging { cursor: grabbing; }
+.title-position-reset {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  z-index: 8;
+  min-height: 25px;
+  padding: 3px 8px;
+  border: 1px solid rgba(105,217,149,.85);
+  border-radius: 5px;
+  background: rgba(8,28,18,.86);
+  color: #bfffd4;
+  font: 700 11px/1.2 -apple-system, "Segoe UI", system-ui, sans-serif;
+  cursor: pointer;
+  box-shadow: 0 1px 5px rgba(0,0,0,.6);
+}
+.title-position-reset:disabled { opacity: .42; cursor: default; }
+.title-position-reset:hover:not(:disabled) { background: rgba(20,78,45,.92); }
 .crop-hover-target:not(.crop-editing) .video-wrap::after,
 .crop-hover-target:not(.crop-editing) .preview-wrap::after {
   content: "Double-click to edit crop";

@@ -301,7 +301,13 @@ async function runExport({ width, height, fps: requestedFps, cropMode = 'vertica
         if (!wrapped?.canvas) throw new Error(`Failed to read frame at ${timestamps[localFrame]}s`);
         if (cropMode === 'horizontal') drawHorizontalFrame(ctx, wrapped.canvas, outW, outH, crop);
         else drawVerticalFrame(ctx, wrapped.canvas, outW, outH, crop);
-        drawCaption(ctx, outW, outH, activeCaptionText(project, Math.round((outTime + localFrame / fps) * 1000)));
+        drawCaption(
+          ctx,
+          outW,
+          outH,
+          activeCaptionText(project, Math.round((outTime + localFrame / fps) * 1000)),
+          { layout: cropMode },
+        );
         await canvasSource.add(outFrame / fps, frameDur);
 
         outFrame++;

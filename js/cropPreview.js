@@ -2,16 +2,19 @@
 import { store } from './store.js';
 import { previewCaptionText, captionOutputId, drawCaption } from './captions.js';
 import { drawVerticalFrame } from './drawing.js';
+import { createTitlePositionEditor } from './titlePositionEditor.js';
 
 let canvas, ctx, video;
 let raf = 0;
 let previewMode = () => 'source';
+let titleEditor = null;
 
 export function init(canvasEl, videoEl, hooks = {}) {
   canvas = canvasEl;
   ctx = canvas.getContext('2d');
   video = videoEl;
   previewMode = typeof hooks.previewMode === 'function' ? hooks.previewMode : () => 'source';
+  titleEditor = createTitlePositionEditor({ canvas, resetButton: hooks.titleReset, layout: 'vertical' });
   resize();
   window.addEventListener('resize', () => { resize(); draw(); });
 
@@ -64,11 +67,16 @@ function draw() {
   if (!ctx) return;
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
-  if (!video || video.readyState < 2 || !video.videoWidth) return;
+  if (!video || video.readyState < 2 || !video.videoWidth) {
+    titleEditor?.update(null, null);
+    return;
+  }
 
   drawVerticalFrame(ctx, video, W, H, currentCrop());
   const text = previewMode() === 'source' ? '' : previewCaptionText(store.get(), store.ui, video.currentTime);
-  if (text) drawCaption(ctx, W, H, text);
+  const editable = !!text && text.kind === 'title' && text.captionId === store.ui.selectedCaptionId;
+  const result = text ? drawCaption(ctx, W, H, text, { layout: 'vertical', editable }) : null;
+  titleEditor?.update(result, text);
 }
 
 function loop() {

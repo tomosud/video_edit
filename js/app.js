@@ -18,6 +18,7 @@ const $ = (id) => document.getElementById(id);
 const el = {};
 ['btnNewProject','btnAddVideo','sourceSelect','btnUndo','btnRedo',
  'btnExport','status','playInfo','sourcePicker','srcVideo','srcEmpty','origPane','origTime','horizMonitorTitle','btnPlay','btnLoop','vertPane','vertCanvas','horizCanvas',
+ 'horizontalTitleReset','verticalTitleReset',
  'panX','panY','zoom','bgBlur','verticalCropReset',
  'sourcePanX','sourcePanY','sourceZoom','sourceBgBlur','sourceCropReset',
  'overlay','overlayMsg','overlayProg',
@@ -51,8 +52,8 @@ function init() {
     .then(rs => rs.forEach(r => r.unregister()))
     .catch(() => { /* ignore */ });
 
-  cropPreview.init(el.vertCanvas, el.srcVideo, { previewMode: currentPreviewMode });
-  horizontalPreview.init(el.horizCanvas, el.srcVideo, { previewMode: currentPreviewMode });
+  cropPreview.init(el.vertCanvas, el.srcVideo, { previewMode: currentPreviewMode, titleReset: el.verticalTitleReset });
+  horizontalPreview.init(el.horizCanvas, el.srcVideo, { previewMode: currentPreviewMode, titleReset: el.horizontalTitleReset });
   srcTimeline.init({
     scroll: el.tlScroll, inner: el.tlInner, thumbRow: el.thumbRow,
     bands: el.clipBands, playhead: el.tlPlayhead, range: el.srcRange,
@@ -524,6 +525,7 @@ function exitCropEdit() {
 }
 
 function selectionPreviewMode() {
+  if (store.ui.selectedCaptionId) return 'edit';
   const sel = store.ui.selection;
   if (sel.kind === 'material') return 'stock';
   if (sel.kind === 'output') return 'edit';

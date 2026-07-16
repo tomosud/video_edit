@@ -12,30 +12,31 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/store.js":                   "./js/store.js?v=20260716d",
-      "./js/db.js":                      "./js/db.js?v=20260716d",
-      "./js/util.js":                    "./js/util.js?v=20260716d",
-      "./js/fileOpen.js":                "./js/fileOpen.js?v=20260716d",
-      "./js/imageVideo.js":              "./js/imageVideo.js?v=20260716d",
-      "./js/mediaInfo.js":               "./js/mediaInfo.js?v=20260716d",
-      "./js/mediaSession.js":            "./js/mediaSession.js?v=20260716d",
-      "./js/mediabunny.js":              "./js/mediabunny.js?v=20260716d",
-      "./js/thumbnails.js":              "./js/thumbnails.js?v=20260716d",
-      "./js/sourceTimeline.js":          "./js/sourceTimeline.js?v=20260716d",
-      "./js/frameStrip.js":              "./js/frameStrip.js?v=20260716d",
-      "./js/materialShelf.js":           "./js/materialShelf.js?v=20260716d",
-      "./js/outputSequenceTimeline.js":  "./js/outputSequenceTimeline.js?v=20260716d",
-      "./js/captions.js":                "./js/captions.js?v=20260716d",
-      "./js/browserTranslation.js":      "./js/browserTranslation.js?v=20260716d",
-      "./js/drawing.js":                 "./js/drawing.js?v=20260716d",
-      "./js/cropPreview.js":             "./js/cropPreview.js?v=20260716d",
-      "./js/horizontalPreview.js":       "./js/horizontalPreview.js?v=20260716d",
-      "./js/export.js":                  "./js/export.js?v=20260716d",
-      "./lib/mediabunny.min.js":         "./lib/mediabunny.min.js?v=20260716d"
+      "./js/store.js":                   "./js/store.js?v=20260716f",
+      "./js/db.js":                      "./js/db.js?v=20260716f",
+      "./js/util.js":                    "./js/util.js?v=20260716f",
+      "./js/fileOpen.js":                "./js/fileOpen.js?v=20260716f",
+      "./js/imageVideo.js":              "./js/imageVideo.js?v=20260716f",
+      "./js/mediaInfo.js":               "./js/mediaInfo.js?v=20260716f",
+      "./js/mediaSession.js":            "./js/mediaSession.js?v=20260716f",
+      "./js/mediabunny.js":              "./js/mediabunny.js?v=20260716f",
+      "./js/thumbnails.js":              "./js/thumbnails.js?v=20260716f",
+      "./js/sourceTimeline.js":          "./js/sourceTimeline.js?v=20260716f",
+      "./js/frameStrip.js":              "./js/frameStrip.js?v=20260716f",
+      "./js/materialShelf.js":           "./js/materialShelf.js?v=20260716f",
+      "./js/outputSequenceTimeline.js":  "./js/outputSequenceTimeline.js?v=20260716f",
+      "./js/captions.js":                "./js/captions.js?v=20260716f",
+      "./js/titlePositionEditor.js":      "./js/titlePositionEditor.js?v=20260716f",
+      "./js/browserTranslation.js":      "./js/browserTranslation.js?v=20260716f",
+      "./js/drawing.js":                 "./js/drawing.js?v=20260716f",
+      "./js/cropPreview.js":             "./js/cropPreview.js?v=20260716f",
+      "./js/horizontalPreview.js":       "./js/horizontalPreview.js?v=20260716f",
+      "./js/export.js":                  "./js/export.js?v=20260716f",
+      "./lib/mediabunny.min.js":         "./lib/mediabunny.min.js?v=20260716f"
     }
   }
   </script>
-  <link rel="stylesheet" href="css/style.css?v=20260716d">
+  <link rel="stylesheet" href="css/style.css?v=20260716f">
 </head>
 <body>
   <div id="app" translate="no">
@@ -107,6 +108,7 @@
         <div class="video-wrap">
           <span id="playInfo" class="play-info preview-play-info">Idle</span>
           <canvas id="horizCanvas"></canvas>
+          <button id="horizontalTitleReset" class="title-position-reset" type="button" hidden>Reset Title Position</button>
           <video id="srcVideo" playsinline preload="auto"></video>
           <div id="srcEmpty" class="placeholder abs">Add a video or image to begin</div>
         </div>
@@ -136,6 +138,7 @@
         <div class="pane-head"><span class="monitor-title"><span class="head-icon">▥</span><span>Monitor 9:16</span></span><span class="spacer"></span><span class="hint crop-edit-hint">Double-click to edit crop</span></div>
         <div class="preview-wrap">
           <canvas id="vertCanvas"></canvas>
+          <button id="verticalTitleReset" class="title-position-reset" type="button" hidden>Reset Title Position</button>
         </div>
         <div class="crop-controls">
           <label>X <input id="panX" type="range" min="0" max="1" step="0.001" value="0.5"></label>
@@ -210,6 +213,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260716d"></script>
+  <script type="module" src="js/app.js?v=20260716f"></script>
 </body>
 </html>

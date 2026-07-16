@@ -46,12 +46,15 @@ export function normalizeCaption(caption, startMs = 0, endMs = startMs + 1000) {
   const fallback = defaultCaption(startMs, endMs);
   const a = Number.isFinite(+caption.startMs) ? Math.round(+caption.startMs) : fallback.startMs;
   const b = Number.isFinite(+caption.endMs) ? Math.round(+caption.endMs) : fallback.endMs;
+  const titlePosition = normalizeTitlePositions(caption.titlePosition);
   return {
     kind: caption.kind === 'title' ? 'title' : 'caption',
     text: String(caption.text || ''),
     secondaryText: String(caption.secondaryText || ''),
     startMs: Math.max(0, a),
     endMs: Math.max(Math.max(0, a) + MIN_CAPTION_MS, b),
+    ...(caption.id ? { id: String(caption.id) } : {}),
+    ...(titlePosition ? { titlePosition } : {}),
   };
 }
 
@@ -109,7 +112,13 @@ export function activeCaptionText(project, sequenceMs) {
     if (!captionLines(row.text).length && !captionLines(row.secondaryText).length) continue;
     const primary = captionTextAt(row, sequenceMs, 'text');
     const secondary = captionTextAt(row, sequenceMs, 'secondaryText');
-    return primary || secondary ? { primary, secondary, kind: row.kind === 'title' ? 'title' : 'caption' } : '';
+    return primary || secondary ? {
+      primary,
+      secondary,
+      kind: row.kind === 'title' ? 'title' : 'caption',
+      captionId: row.id || null,
+      ...(row.titlePosition ? { titlePosition: row.titlePosition } : {}),
+    } : '';
   }
   return '';
 }
@@ -153,7 +162,13 @@ function selectedCaptionTextAt(project, captionId, sequenceMs) {
       const abs = captionAbsolute(caption, startMs, material);
       const primary = captionTextAt(abs, sequenceMs, 'text');
       const secondary = captionTextAt(abs, sequenceMs, 'secondaryText');
-      return primary || secondary ? { primary, secondary, kind: abs.kind === 'title' ? 'title' : 'caption' } : '';
+      return primary || secondary ? {
+        primary,
+        secondary,
+        kind: abs.kind === 'title' ? 'title' : 'caption',
+        captionId: abs.id || captionId,
+        ...(abs.titlePosition ? { titlePosition: abs.titlePosition } : {}),
+      } : '';
     }
     startMs += durationMs;
   }
@@ -175,15 +190,14 @@ export function densityClass(caption) {
   return 'ok';
 }
 
-export function drawCaption(ctx, width, height, text) {
+export function drawCaption(ctx, width, height, text, { layout = 'vertical', editable = false } = {}) {
   const primaryText = typeof text === 'object' && text ? text.primary : text;
   const secondaryText = typeof text === 'object' && text ? text.secondary : '';
   const primaryRaw = captionLines(primaryText);
   const secondaryRaw = captionLines(secondaryText);
-  if (!ctx || (!primaryRaw.length && !secondaryRaw.length) || !width || !height) return;
+  if (!ctx || (!primaryRaw.length && !secondaryRaw.length) || !width || !height) return null;
   if (typeof text === 'object' && text?.kind === 'title') {
-    drawTitle(ctx, width, height, primaryRaw, secondaryRaw);
-    return;
+    return drawTitle(ctx, width, height, primaryRaw, secondaryRaw, titlePositionFor(text, layout), editable);
   }
 
   const maxTextWidth = width * 0.84;
@@ -236,9 +250,10 @@ export function drawCaption(ctx, width, height, text) {
     cursorY += lineHeight;
   }
   ctx.restore();
+  return null;
 }
 
-function drawTitle(ctx, width, height, primaryRaw, secondaryRaw) {
+function drawTitle(ctx, width, height, primaryRaw, secondaryRaw, position, editable) {
   const maxTextWidth = width * 0.86;
   let fontSize = Math.max(24, Math.round(height * 0.085));
   ctx.save();
@@ -264,7 +279,14 @@ function drawTitle(ctx, width, height, primaryRaw, secondaryRaw) {
   const lineHeight = Math.round(fontSize * 1.2);
   const groupGap = primaryLines.length && secondaryLines.length ? Math.round(fontSize * 0.3) : 0;
   const blockHeight = (primaryLines.length + secondaryLines.length) * lineHeight + groupGap;
-  let cursorY = height / 2 - blockHeight / 2 + lineHeight / 2;
+  const allLines = [...primaryLines, ...secondaryLines];
+  const blockWidth = Math.max(1, ...allLines.map(line => ctx.measureText(line).width));
+  const pad = Math.max(4, Math.round(fontSize * 0.18));
+  const halfW = blockWidth / 2 + pad;
+  const halfH = blockHeight / 2 + pad;
+  const centerX = clamp(position.x * width, halfW, Math.max(halfW, width - halfW));
+  const centerY = clamp(position.y * height, halfH, Math.max(halfH, height - halfH));
+  let cursorY = centerY - blockHeight / 2 + lineHeight / 2;
   ctx.lineJoin = 'round';
   ctx.lineWidth = Math.max(2, Math.round(fontSize * 0.075));
   ctx.strokeStyle = 'rgba(0,0,0,.86)';
@@ -275,16 +297,49 @@ function drawTitle(ctx, width, height, primaryRaw, secondaryRaw) {
   const drawLines = (lines, color) => {
     ctx.fillStyle = color;
     for (const line of lines) {
-      ctx.strokeText(line, width / 2, cursorY);
-      ctx.fillText(line, width / 2, cursorY);
+      ctx.strokeText(line, centerX, cursorY);
+      ctx.fillText(line, centerX, cursorY);
       cursorY += lineHeight;
     }
   };
   drawLines(primaryLines, '#fff');
   if (primaryLines.length && secondaryLines.length) cursorY += groupGap;
   drawLines(secondaryLines, '#ffd84d');
+  const bounds = { x: centerX - halfW, y: centerY - halfH, width: halfW * 2, height: halfH * 2 };
+  if (editable) {
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = Math.max(1, Math.round(fontSize * 0.035));
+    ctx.strokeStyle = 'rgba(105,217,149,.9)';
+    ctx.setLineDash([Math.max(4, Math.round(fontSize * 0.14)), Math.max(3, Math.round(fontSize * 0.1))]);
+    ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+  }
   ctx.restore();
+  return { kind: 'title', bounds, position };
 }
+
+export function titlePositionFor(caption, layout) {
+  const key = layout === 'horizontal' ? 'horizontal' : 'vertical';
+  const raw = caption?.titlePosition?.[key];
+  return {
+    x: clamp01(Number.isFinite(+raw?.x) ? +raw.x : 0.5),
+    y: clamp01(Number.isFinite(+raw?.y) ? +raw.y : 0.5),
+  };
+}
+
+function normalizeTitlePositions(value) {
+  if (!value || typeof value !== 'object') return null;
+  const result = {};
+  for (const key of ['horizontal', 'vertical']) {
+    const raw = value[key];
+    if (!raw || !Number.isFinite(+raw.x) || !Number.isFinite(+raw.y)) continue;
+    result[key] = { x: clamp01(+raw.x), y: clamp01(+raw.y) };
+  }
+  return Object.keys(result).length ? result : null;
+}
+
+const clamp01 = (value) => Math.max(0, Math.min(1, value));
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 function captionFont(size) {
   return `700 ${size}px -apple-system, "Segoe UI", system-ui, sans-serif`;
