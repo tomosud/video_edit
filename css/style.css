@@ -76,6 +76,11 @@ video {
 .btn-accent { background: var(--accent-2); border-color: var(--accent); }
 .btn-accent:hover:not(:disabled) { background: var(--accent); }
 .btn-sm { padding: 3px 9px; min-height: 26px; font-size: 12px; }
+.btn-auto-translate.active {
+  border-color: #69d995;
+  background: rgba(31, 112, 66, .72);
+  color: #e6ffef;
+}
 .sel {
   background: var(--panel-2); color: var(--text);
   border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-height: 34px;
@@ -1119,6 +1124,16 @@ video {
 .caption-edit-textarea + .caption-edit-textarea {
   color: #ffe873;
   border-left: 1px solid rgba(255,255,255,.18);
+}
+.caption-edit-secondary {
+  white-space: pre-wrap;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.caption-edit-secondary:empty::before {
+  content: attr(data-placeholder);
+  color: rgba(255,232,115,.5);
+  pointer-events: none;
 }
 .caption-kind-toggle {
   position: absolute;

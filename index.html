@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Disposable Video Editor</title>
+  <title translate="no">Disposable Video Editor</title>
   <!-- Cache busting is centralized here: bump the version string below
        (one search-replace in this file) whenever any js/css changes.
        Module imports in js/ carry no query strings; this import map pins
@@ -12,32 +12,33 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/store.js":                   "./js/store.js?v=20260712am",
-      "./js/db.js":                      "./js/db.js?v=20260712am",
-      "./js/util.js":                    "./js/util.js?v=20260712am",
-      "./js/fileOpen.js":                "./js/fileOpen.js?v=20260712am",
-      "./js/imageVideo.js":              "./js/imageVideo.js?v=20260712am",
-      "./js/mediaInfo.js":               "./js/mediaInfo.js?v=20260712am",
-      "./js/mediaSession.js":            "./js/mediaSession.js?v=20260712am",
-      "./js/mediabunny.js":              "./js/mediabunny.js?v=20260712am",
-      "./js/thumbnails.js":              "./js/thumbnails.js?v=20260712am",
-      "./js/sourceTimeline.js":          "./js/sourceTimeline.js?v=20260712am",
-      "./js/frameStrip.js":              "./js/frameStrip.js?v=20260712am",
-      "./js/materialShelf.js":           "./js/materialShelf.js?v=20260712am",
-      "./js/outputSequenceTimeline.js":  "./js/outputSequenceTimeline.js?v=20260712am",
-      "./js/captions.js":                "./js/captions.js?v=20260712am",
-      "./js/drawing.js":                 "./js/drawing.js?v=20260712am",
-      "./js/cropPreview.js":             "./js/cropPreview.js?v=20260712am",
-      "./js/horizontalPreview.js":       "./js/horizontalPreview.js?v=20260712am",
-      "./js/export.js":                  "./js/export.js?v=20260712am",
-      "./lib/mediabunny.min.js":         "./lib/mediabunny.min.js?v=mb-1"
+      "./js/store.js":                   "./js/store.js?v=20260716b",
+      "./js/db.js":                      "./js/db.js?v=20260716b",
+      "./js/util.js":                    "./js/util.js?v=20260716b",
+      "./js/fileOpen.js":                "./js/fileOpen.js?v=20260716b",
+      "./js/imageVideo.js":              "./js/imageVideo.js?v=20260716b",
+      "./js/mediaInfo.js":               "./js/mediaInfo.js?v=20260716b",
+      "./js/mediaSession.js":            "./js/mediaSession.js?v=20260716b",
+      "./js/mediabunny.js":              "./js/mediabunny.js?v=20260716b",
+      "./js/thumbnails.js":              "./js/thumbnails.js?v=20260716b",
+      "./js/sourceTimeline.js":          "./js/sourceTimeline.js?v=20260716b",
+      "./js/frameStrip.js":              "./js/frameStrip.js?v=20260716b",
+      "./js/materialShelf.js":           "./js/materialShelf.js?v=20260716b",
+      "./js/outputSequenceTimeline.js":  "./js/outputSequenceTimeline.js?v=20260716b",
+      "./js/captions.js":                "./js/captions.js?v=20260716b",
+      "./js/browserTranslation.js":      "./js/browserTranslation.js?v=20260716b",
+      "./js/drawing.js":                 "./js/drawing.js?v=20260716b",
+      "./js/cropPreview.js":             "./js/cropPreview.js?v=20260716b",
+      "./js/horizontalPreview.js":       "./js/horizontalPreview.js?v=20260716b",
+      "./js/export.js":                  "./js/export.js?v=20260716b",
+      "./lib/mediabunny.min.js":         "./lib/mediabunny.min.js?v=20260716b"
     }
   }
   </script>
-  <link rel="stylesheet" href="css/style.css?v=20260712am">
+  <link rel="stylesheet" href="css/style.css?v=20260716b">
 </head>
 <body>
-  <div id="app">
+  <div id="app" translate="no">
 
     <header id="menu">
       <span class="brand" tabindex="0" aria-describedby="brandInfo">
@@ -151,6 +152,7 @@
         <span class="step-title"><span class="step-badge">3</span><span class="head-icon">🎞</span><span>Edit</span></span>
         <button id="btnPlayOut" class="btn btn-sm" disabled title="Play from start">▶ From Start</button>
         <button id="btnStopOut" class="btn btn-sm" disabled title="Pause or resume">⏸ Pause</button>
+        <button id="btnAutoTranslate" class="btn btn-sm btn-auto-translate" type="button" aria-pressed="false">🌐 Auto: Off</button>
         <span class="hint">Wheel to zoom / right-drag to pan / drag playhead / double-click empty caption lane to add / double-click caption to type</span>
         <span class="spacer"></span>
         <span id="totalDur" class="time">Total 0:00</span>
@@ -165,14 +167,14 @@
 
   </div>
 
-  <div id="overlay" class="overlay" hidden>
+  <div id="overlay" class="overlay notranslate" translate="no" hidden>
     <div class="overlay-box">
       <div id="overlayMsg">Processing...</div>
       <progress id="overlayProg" max="100" value="0"></progress>
     </div>
   </div>
 
-  <div id="confirm" class="overlay" hidden>
+  <div id="confirm" class="overlay notranslate" translate="no" hidden>
     <div class="overlay-box confirm-box">
       <div id="confirmTitle" class="confirm-title">Confirm Delete</div>
       <div id="confirmMsg" class="confirm-msg"></div>
@@ -183,7 +185,7 @@
     </div>
   </div>
 
-  <div id="exportMode" class="overlay" hidden>
+  <div id="exportMode" class="overlay notranslate" translate="no" hidden>
     <div class="overlay-box export-mode-box" role="dialog" aria-modal="true" aria-labelledby="exportModeTitle">
       <div id="exportModeTitle" class="confirm-title">Export ratio</div>
       <div class="export-mode-actions">
@@ -206,6 +208,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260712am"></script>
+  <script type="module" src="js/app.js?v=20260716b"></script>
 </body>
 </html>

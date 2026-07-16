@@ -11,6 +11,7 @@ import * as outSeq from './outputSequenceTimeline.js';
 import { cardThumb, cloneCanvas } from './thumbnails.js';
 import { disposeMediaSessions } from './mediaSession.js';
 import { exportProject, downloadBlob } from './export.js';
+import * as browserTranslation from './browserTranslation.js';
 import { escapeAttr, escapeHtml, fmtTime, frameFromTime, frameProbeTime, makeScrubber, seekVideoFrame } from './util.js';
 
 const $ = (id) => document.getElementById(id);
@@ -25,7 +26,8 @@ const el = {};
  'srcPane','tlScroll','tlInner','thumbRow','clipBands','tlPlayhead','frameStrip','srcRange',
  'tlOverview','ovThumbRow','ovClips','ovWindow','ovPlayhead',
  'seekBar','seekMarks','seekRange','seekFill','seekHead','frameInfo',
- 'workPane','shelf','shelfCount','outList','captionEditor','totalDur','btnPlayOut','btnStopOut'].forEach(id => el[id] = $(id));
+ 'workPane','shelf','shelfCount','outList','captionEditor','totalDur','btnPlayOut','btnStopOut',
+ 'btnAutoTranslate'].forEach(id => el[id] = $(id));
 
 let activeUrl = null;
 let pendingSeek = null;
@@ -59,6 +61,7 @@ function init() {
   frameStrip.init(el.frameStrip, el.srcVideo, { sourcePreview: activateSourcePreview });
   shelf.init({ shelf: el.shelf, count: el.shelfCount }, { play: playRange });
   outSeq.init({ list: el.outList, captionEditor: el.captionEditor, total: el.totalDur, video: el.srcVideo }, { play: playOutputFrom, seek: seekOutputTime });
+  browserTranslation.init({ button: el.btnAutoTranslate, root: el.outList, status: setStatus });
   srcTimeline.onPlayRange(playRange);
   srcTimeline.onSourcePreview(activateSourcePreview);
   store.setSessionMetaProvider(sessionMeta);

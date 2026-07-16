@@ -1,8 +1,9 @@
 ﻿// outputSequenceTimeline.js - edit timeline with playhead, wheel zoom/pan, and anchored captions
 import { store, uid } from './store.js';
 import { horizontalCardThumb, horizontalCropSignature, cloneCanvas } from './thumbnails.js';
-import { escapeHtml, fmtDur } from './util.js';
+import { escapeAttr, escapeHtml, fmtDur } from './util.js';
 import { MIN_CAPTION_MS, captionAbsolute, captionDensity, captionLines, densityClass } from './captions.js';
+import { TRANSLATION_EVENT } from './browserTranslation.js';
 
 const MIN_SPAN_SEC = 1;
 const MIN_CLIP_PX = 28;
@@ -53,6 +54,7 @@ export function init(elements, hooks = {}) {
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
   window.addEventListener('resize', render);
+  document.addEventListener(TRANSLATION_EVENT, onCaptionTranslation);
 
   if (video) {
     video.addEventListener('timeupdate', positionPlayhead);
@@ -66,6 +68,14 @@ export function init(elements, hooks = {}) {
   // pointermove during drags and a full DOM rebuild per event is wasted work.
   // Direct render() calls (wheel/pan/resize) stay synchronous.
   store.subscribe(scheduleRender);
+}
+
+function onCaptionTranslation(e) {
+  if (!editingCaptionId) return;
+  const update = (e.detail?.updates || []).find(row => row.id === editingCaptionId);
+  if (!update) return;
+  const secondary = listEl.querySelector('.caption-edit-textarea[data-caption-field="secondaryText"]');
+  if (secondary) setCaptionEditValue(secondary, update.text);
 }
 
 function onCaptionEditBoundaryPointerDown(e) {
@@ -308,7 +318,7 @@ function captionBar(item, caption, layout) {
     '<span class="caption-handle caption-handle-l" data-edge="start"></span>' +
     '<span class="caption-label">' +
     `<span class="caption-label-primary">${escapeHtml(primaryLabel)}</span>` +
-    `<span class="caption-label-secondary">${escapeHtml(secondaryLabel)}</span>` +
+    `<span class="caption-label-secondary" data-caption-translation="${escapeAttr(caption.id)}" translate="yes">${escapeHtml(secondaryLabel)}</span>` +
     '</span>' +
     '<span class="caption-anchor-stem"></span><span class="caption-anchor-dot"></span>' +
     (caption.kind === 'title' ? '<span class="caption-kind-indicator">Title</span>' : '') +
@@ -443,7 +453,7 @@ function mountCaptionTextEdit(captionId) {
   const panel = document.createElement('div');
   panel.className = 'caption-edit-panel';
   const primary = captionEditTextarea(found.caption.text || '', 'Primary');
-  const secondary = captionEditTextarea(found.caption.secondaryText || '', 'Second');
+  const secondary = captionEditSecondary(found.caption.secondaryText || '', captionId);
   const kindButton = document.createElement('button');
   kindButton.type = 'button';
   kindButton.className = 'caption-kind-toggle';
@@ -466,34 +476,34 @@ function mountCaptionTextEdit(captionId) {
     store.updateLive((p, ui) => {
       const cur = findCaption(p, captionId);
       if (!cur) return;
-      cur.caption.text = primary.value;
-      cur.caption.secondaryText = secondary.value;
+      cur.caption.text = captionEditValue(primary);
+      cur.caption.secondaryText = captionEditValue(secondary);
       cur.caption.kind = kindButton.dataset.kind === 'title' ? 'title' : 'caption';
       ui.selectedCaptionId = captionId;
     });
   };
-  for (const textarea of [primary, secondary]) {
-    textarea.addEventListener('pointerdown', (e) => e.stopPropagation());
-    textarea.addEventListener('click', (e) => {
+  for (const field of [primary, secondary]) {
+    field.addEventListener('pointerdown', (e) => e.stopPropagation());
+    field.addEventListener('click', (e) => {
       e.stopPropagation();
-      seekTextEditLine(captionId, textarea);
+      seekTextEditLine(captionId, field);
     });
-    textarea.addEventListener('dblclick', (e) => e.stopPropagation());
-    textarea.addEventListener('focus', () => seekTextEditLine(captionId, textarea));
-    textarea.addEventListener('input', () => {
+    field.addEventListener('dblclick', (e) => e.stopPropagation());
+    field.addEventListener('focus', () => seekTextEditLine(captionId, field));
+    field.addEventListener('input', () => {
       sync();
-      seekTextEditLine(captionId, textarea);
+      seekTextEditLine(captionId, field);
     });
-    textarea.addEventListener('keyup', () => seekTextEditLine(captionId, textarea));
-    textarea.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') textarea.blur();
+    field.addEventListener('keyup', () => seekTextEditLine(captionId, field));
+    field.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') field.blur();
       if (e.key === 'Escape') {
-        primary.value = found.caption.text || '';
-        secondary.value = found.caption.secondaryText || '';
-        textarea.blur();
+        setCaptionEditValue(primary, found.caption.text || '');
+        setCaptionEditValue(secondary, found.caption.secondaryText || '');
+        field.blur();
       }
     });
-    textarea.addEventListener('blur', () => {
+    field.addEventListener('blur', () => {
       requestAnimationFrame(() => {
         if (editingCaptionId !== captionId) return;
         if (panel.contains(document.activeElement)) return;
@@ -527,15 +537,49 @@ function captionEditTextarea(value, label) {
   return textarea;
 }
 
-function seekTextEditLine(captionId, textarea) {
+function captionEditSecondary(value, captionId) {
+  const field = document.createElement('div');
+  field.className = 'caption-edit-textarea caption-edit-secondary';
+  field.contentEditable = 'true';
+  field.spellcheck = false;
+  field.dataset.placeholder = 'Second';
+  field.dataset.captionTranslation = captionId;
+  field.setAttribute('translate', 'yes');
+  field.textContent = value;
+  return field;
+}
+
+function captionEditValue(field) {
+  if (field instanceof HTMLTextAreaElement) return field.value;
+  return String(field.innerText || field.textContent || '').replace(/\r/g, '').trimEnd();
+}
+
+function setCaptionEditValue(field, value) {
+  if (field instanceof HTMLTextAreaElement) field.value = value;
+  else field.textContent = value;
+}
+
+function seekTextEditLine(captionId, field) {
   const found = findCaption(store.get(), captionId);
   if (!found) return;
   const layout = sequenceLayout();
   const item = layout.items.find(it => it.output.id === found.output.id);
   if (!item) return;
-  const lineIndex = Math.max(0, textarea.value.slice(0, textarea.selectionStart || 0).split(/\r?\n/).length - 1);
-  const ms = captionLineStartMs(found.caption, textarea.dataset.captionField || 'text', lineIndex, item);
+  const value = captionEditValue(field);
+  const offset = captionEditCaretOffset(field);
+  const lineIndex = Math.max(0, value.slice(0, offset).split(/\r?\n/).length - 1);
+  const ms = captionLineStartMs(found.caption, field.dataset.captionField || 'text', lineIndex, item);
   seekTimelineMs(ms, true);
+}
+
+function captionEditCaretOffset(field) {
+  if (field instanceof HTMLTextAreaElement) return field.selectionStart || 0;
+  const selection = window.getSelection();
+  if (!selection?.rangeCount || !field.contains(selection.anchorNode)) return 0;
+  const range = selection.getRangeAt(0).cloneRange();
+  range.selectNodeContents(field);
+  range.setEnd(selection.anchorNode, selection.anchorOffset);
+  return range.toString().length;
 }
 
 function wireCaptionPointer(bar, captionId) {
